@@ -2,7 +2,7 @@
 class ManWaBa extends ComicSource {
     name = "漫蛙吧"
     key = "manwaba_final"
-    version = "1.0.41"
+    version = "1.0.42"
     minAppVersion = "1.4.0"
     url = "https://cdn.jsdelivr.net/gh/amenoshigure/venera-sources@main/manwaba.js"
 
@@ -30,7 +30,7 @@ class ManWaBa extends ComicSource {
     }
 
     // ============================================
-    // Explore - 使用API
+    // Explore
     // ============================================
     explore = [{
         title: "漫蛙吧",
@@ -210,65 +210,48 @@ class ManWaBa extends ComicSource {
         },
 
         // ============================================
-        // ✅ 加载章节图片 - 使用HTML解析
+        // ✅ 加载章节图片 - 使用API获取图片列表
         // ============================================
         loadEp: async (comicId, epId) => {
             const realComicId = comicId.replace(/^mw_/, '');
             
-            // 直接从阅读页HTML解析图片
-            const url = `${this.baseUrl}/comic/${realComicId}/${epId}`
-            const res = await Network.get(url, {
-                headers: {
-                    "User-Agent": this.UA,
-                    "Referer": this.baseUrl,
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-                }
-            })
+            // ✅ 直接使用API获取图片
+            const imgApi = `${this.api}/comic/image/${epId}`;
             
-            if (res.status !== 200) {
-                throw `阅读页请求失败: ${res.status}`
+            // 先获取图片总数
+            const pageInfo = await this.fetchJson(imgApi, {
+                params: { page: 1, pageSize: 1, imageSource: "https://tu.mwzu.cc" }
+            }).catch(() => ({ data: { pagination: { total: 0 } } }));
+            
+            const total = pageInfo?.data?.pagination?.total || 0;
+            
+            if (total === 0) {
+                throw "未找到任何图片"
             }
 
-            const doc = new HtmlDocument(res.body)
-            const images = []
-            
-            // 从阅读页提取所有图片 data-src
-            const imgElements = doc.querySelectorAll("#showimgcontent figure.cImg img.lazy-image")
-            for (const img of imgElements) {
-                let src = img.attributes?.["data-src"] || img.attributes?.src || ""
-                
-                // 只保留有效的图片URL
-                if (src && 
-                    typeof src === 'string' && 
-                    src.length > 0 &&
-                    src.startsWith("https://") &&
-                    !src.includes("logo") && 
-                    !src.includes("icon") && 
-                    !src.includes("avatar") && 
-                    !src.includes("favicon") &&
-                    !src.includes("loading") &&
-                    !src.includes("blank") &&
-                    !src.includes("imagecover3") &&
-                    !src.includes("mwmissing") &&
-                    !src.includes("blob:") &&
-                    !src.includes("data:image")) {
-                    images.push(src)
+            // 获取所有图片
+            const imageRes = await this.fetchJson(imgApi, {
+                params: {
+                    page: 1,
+                    page_size: total,
+                    imageSource: "https://tu.mwzu.cc"
                 }
-            }
-            doc.dispose()
+            });
+
+            const images = imageRes?.data?.images?.map(item => item.url) || [];
 
             if (images.length === 0) {
-                throw "本章未找到任何图片"
+                throw "本章未找到任何图片";
             }
 
-            return { images }
+            return { images };
         },
 
         onImageLoad: (url, comicId, epId) => {
             return {
                 url: url,
                 headers: {
-                    "Referer": `${this.baseUrl}/comic/${comicId.replace(/^mw_/, '')}/${epId}`,
+                    "Referer": "https://manwa.me",
                     "User-Agent": this.UA,
                     "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
                     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
