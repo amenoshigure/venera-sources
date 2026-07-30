@@ -2,7 +2,7 @@
 class ManWaBa extends ComicSource {
     name = "漫蛙吧"
     key = "manwaba"
-    version = "1.0.9"
+    version = "1.0.10"
     minAppVersion = "1.6.0"
     url = "https://cdn.jsdelivr.net/gh/amenoshigure/venera-sources@main/manwaba.js"
 
@@ -129,7 +129,7 @@ class ManWaBa extends ComicSource {
     }
 
     // ============================================
-    // 漫画详情（方案一：提取真实章节ID）
+    // 漫画详情
     // ============================================
     comic = {
         loadInfo: async (id) => {
@@ -163,35 +163,35 @@ class ManWaBa extends ComicSource {
                           ""
 
             // ============================================
-            // 【关键】提取章节列表，获取真实的章节ID
+            // 提取章节列表，获取真实的章节ID
             // ============================================
             const chapters = {}
             
-            // 方法1：查找章节列表容器中的链接
-            const chapterLinks = doc.querySelectorAll(".chapter-list a, .chapters a, .list a, .chapter-item a, .chapter-link")
+            // 从章节列表提取链接（格式：/chapter/数字ID）
+            const chapterLinks = doc.querySelectorAll(".detail-list-1 a, .chapterlist a, .chapter-item a, .chapter-link, .chapter-list a")
             for (const item of chapterLinks) {
                 const href = item.attributes?.href || ""
-                // 提取URL中的数字ID
+                // 从 /chapter/31440179 提取 31440179
                 const cid = href.split("/").pop() || ""
                 const name = item.text?.trim() || ""
-                if (cid && name && !isNaN(cid)) {
+                if (cid && name && !isNaN(cid) && cid.length > 0) {
                     chapters[cid] = name
                 }
             }
 
-            // 方法2：如果方法1没有找到，尝试从最新章节链接提取
+            // 如果上面的方法没有找到，尝试从最新章节链接提取
             if (Object.keys(chapters).length === 0) {
                 const chapterLink = doc.querySelector(".detail-main-info-chapter a")
                 if (chapterLink) {
                     const href = chapterLink.attributes?.href || ""
                     const cid = href.split("/").pop() || ""
-                    if (cid && !isNaN(cid)) {
+                    if (cid && !isNaN(cid) && cid.length > 0) {
                         chapters[cid] = lastChapter || "第1话"
                     }
                 }
             }
 
-            // 方法3：如果还是没找到，使用漫画ID作为章节ID（临时方案）
+            // 如果还是没找到，使用漫画ID作为章节ID（临时方案）
             if (Object.keys(chapters).length === 0) {
                 chapters[id] = lastChapter || "第1话"
             }
@@ -213,22 +213,31 @@ class ManWaBa extends ComicSource {
         },
 
         // ============================================
-        // 加载章节图片
+        // 加载章节图片（修复版）
         // ============================================
         loadEp: async (comicId, epId) => {
             if (!comicId || !epId) {
                 throw "漫画ID或章节ID不能为空"
             }
             
-            // 构建阅读页URL
-            const url = `${this.baseUrl}/read/${comicId}/${epId}`
+            // ✅ 修复：使用 /chapter/{epId} 格式
+            const url = `${this.baseUrl}/chapter/${epId}`
             const res = await this.requestGet(url, `${this.baseUrl}/book/${comicId}`)
             if (res.status !== 200) throw `阅读页请求失败: ${res.status}`
 
             const doc = new HtmlDocument(res.body)
             const images = []
-            for (const img of doc.querySelectorAll("img")) {
-                const src = img.attributes?.src || ""
+            
+            // ✅ 从 data-r-src 属性提取真实图片地址
+            // 图片使用懒加载，真实地址在 data-r-src 中
+            const imgElements = doc.querySelectorAll("img.content-img, img.lazy_img, .img-content img")
+            for (const img of imgElements) {
+                // 优先使用 data-r-src，其次是 data-original，最后是 src
+                let src = img.attributes?.["data-r-src"] || 
+                          img.attributes?.["data-original"] || 
+                          img.attributes?.src || ""
+                
+                // 过滤无效图片
                 if (src && 
                     typeof src === 'string' && 
                     src.length > 0 &&
@@ -237,7 +246,10 @@ class ManWaBa extends ComicSource {
                     !src.includes("avatar") && 
                     !src.includes("favicon") &&
                     !src.includes("loading") &&
-                    !src.includes("blank")) {
+                    !src.includes("blank") &&
+                    !src.includes("imagecover3") && // 排除占位图
+                    !src.includes("mwmissing") &&
+                    !src.startsWith("blob:")) { // 排除 blob 占位
                     images.push(src)
                 }
             }
@@ -259,7 +271,7 @@ class ManWaBa extends ComicSource {
             return {
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                    'Referer': `${this.baseUrl}/read/${comicId}/${epId}`,
+                    'Referer': `${this.baseUrl}/chapter/${epId}`,
                     'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8'
                 }
             }
