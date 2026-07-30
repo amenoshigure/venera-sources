@@ -5,7 +5,7 @@ class ManWaBa extends ComicSource {
     // ============================================
     name = "漫蛙吧"
     key = "manwaba"
-    version = "1.0.6"
+    version = "1.0.7"
     minAppVersion = "1.6.0"
     url = "https://cdn.jsdelivr.net/gh/amenoshigure/venera-sources@main/manwaba.js"
 
@@ -48,49 +48,40 @@ class ManWaBa extends ComicSource {
     }
 
     // ============================================
-    // 从搜索结果页面解析漫画
+    // 从搜索结果页面解析漫画 - 根据实际HTML结构
     // ============================================
     parseSearchResult = (item) => {
-        const a = item.querySelector("a")
-        const href = a?.attributes?.href || ""
+        // 获取链接
+        const link = item.querySelector("a[href^='/book/']")
+        const href = link?.attributes?.href || ""
         const id = this.safeId(href)
         
-        const title = this.safeString(item.querySelector(".body .title")?.text)
-        const cover = this.safeString(item.querySelector(".thumb_img")?.attributes?.["data-original"])
-        const author = this.safeString(item.querySelector(".body .row:first-child")?.text)
-        const description = this.safeString(item.querySelector(".body .text")?.text)
+        // 获取标题
+        const title = this.safeString(item.querySelector(".book-list-info-title")?.text)
         
-        const statusElem = item.querySelector(".body .row .badge-item:last-child")
+        // 获取封面
+        const img = item.querySelector(".book-list-cover-img")
+        const cover = img?.attributes?.["data-original"] || img?.attributes?.src || ""
+        
+        // 获取作者
+        const authorElem = item.querySelector(".book-list-info-bottom-item")
+        const author = authorElem?.text?.replace("作者：", "").trim() || ""
+        
+        // 获取状态
+        const statusElem = item.querySelector(".book-list-info-bottom-right-font")
         const status = statusElem?.text?.trim() || ""
+        
+        // 获取简介
+        const desc = this.safeString(item.querySelector(".book-list-info-desc")?.text)
 
         return {
             id: id,
             title: title,
             cover: cover,
             subTitle: author,
-            description: description,
+            description: desc || status,
             tags: [status]
         }
-    }
-
-    // ============================================
-    // 从漫画详情页解析章节列表
-    // ============================================
-    parseChapters = (doc) => {
-        const chapters = {}
-        // 从详情页提取章节 - 根据您提供的源码
-        const items = doc.querySelectorAll(".chapter-grid .chapter-item")
-        for (const item of items) {
-            const href = item.attributes?.href || ""
-            const cid = this.safeId(href)
-            // 章节名称在 .chapter-name 中
-            const nameElem = item.querySelector(".chapter-name")
-            const name = nameElem?.text?.trim() || ""
-            if (cid && name) {
-                chapters[cid] = name
-            }
-        }
-        return chapters
     }
 
     // ============================================
@@ -106,7 +97,7 @@ class ManWaBa extends ComicSource {
             }
 
             const doc = new HtmlDocument(res.body)
-            const items = doc.querySelectorAll("#dataList section .item")
+            const items = doc.querySelectorAll("ul.book-list li")
             const comics = []
 
             for (const item of items) {
@@ -168,28 +159,37 @@ class ManWaBa extends ComicSource {
         loadInfo: async (id) => {
             if (!id) throw "漫画ID不能为空"
             
-            const url = `${this.baseUrl}/comic/${id}`
+            const url = `${this.baseUrl}/book/${id}`
             const res = await this.requestGet(url, url)
             if (res.status !== 200) throw `详情页请求失败: ${res.status}`
 
             const doc = new HtmlDocument(res.body)
             
             // 提取标题
-            const title = doc.querySelector(".page-title")?.text?.trim() || 
-                          doc.querySelector(".comic-title")?.text?.trim() || 
+            const title = doc.querySelector(".book-list-info-title")?.text?.trim() || 
+                          doc.querySelector(".page-title")?.text?.trim() || 
                           id
             // 提取封面
-            const cover = doc.querySelector(".comic-cover")?.attributes?.src || 
-                          doc.querySelector(".thumb_img")?.attributes?.["data-original"] || 
+            const cover = doc.querySelector(".book-list-cover-img")?.attributes?.["data-original"] || 
+                          doc.querySelector(".book-cover-img")?.attributes?.src || 
                           ""
             // 提取简介
-            const description = doc.querySelector(".comic-desc")?.text?.trim() || ""
+            const description = doc.querySelector(".book-list-info-desc")?.text?.trim() || ""
             // 提取作者
-            const authorElem = doc.querySelector("#author-container")
-            const author = authorElem?.text?.trim() || ""
+            const authorElem = doc.querySelector(".book-list-info-bottom-item")
+            const author = authorElem?.text?.replace("作者：", "").trim() || ""
 
-            // 提取章节列表 - 根据您提供的源码结构
-            const chapters = this.parseChapters(doc)
+            // 提取章节列表
+            const chapters = {}
+            const chapterItems = doc.querySelectorAll(".chapter-list li, .chapters a, .list a")
+            for (const item of chapterItems) {
+                const href = item.attributes?.href || ""
+                const cid = this.safeId(href)
+                const name = item.text?.trim() || ""
+                if (cid && name) {
+                    chapters[cid] = name
+                }
+            }
 
             doc.dispose()
 
@@ -206,8 +206,8 @@ class ManWaBa extends ComicSource {
         loadEp: async (comicId, epId) => {
             if (!comicId || !epId) throw "参数不能为空"
             
-            const url = `${this.baseUrl}/comic/${comicId}/${epId}`
-            const res = await this.requestGet(url, `${this.baseUrl}/comic/${comicId}`)
+            const url = `${this.baseUrl}/read/${comicId}/${epId}`
+            const res = await this.requestGet(url, `${this.baseUrl}/book/${comicId}`)
             if (res.status !== 200) throw `阅读页请求失败: ${res.status}`
 
             const doc = new HtmlDocument(res.body)
@@ -230,7 +230,7 @@ class ManWaBa extends ComicSource {
             return {
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                    'Referer': `${this.baseUrl}/comic/${comicId}/${epId}`,
+                    'Referer': `${this.baseUrl}/read/${comicId}/${epId}`,
                     'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8'
                 }
             }
