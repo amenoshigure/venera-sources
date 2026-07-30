@@ -1,22 +1,13 @@
 /** @type {import('./_venera_.js')} */
 class ManWaBa extends ComicSource {
-    // ============================================
-    // 漫画源基本信息
-    // ============================================
     name = "漫蛙吧"
     key = "manwaba"
-    version = "1.0.7"
+    version = "1.0.8"
     minAppVersion = "1.6.0"
     url = "https://cdn.jsdelivr.net/gh/amenoshigure/venera-sources@main/manwaba.js"
 
-    // ============================================
-    // 基础 URL
-    // ============================================
     baseUrl = "https://manwa.me"
 
-    // ============================================
-    // 请求头
-    // ============================================
     getHeaders(referer = this.baseUrl) {
         return {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -34,9 +25,6 @@ class ManWaBa extends ComicSource {
         })
     }
 
-    // ============================================
-    // 工具函数
-    // ============================================
     safeString = (value) => {
         return value?.trim() || ""
     }
@@ -47,31 +35,18 @@ class ManWaBa extends ComicSource {
         return parts[parts.length - 1] || ""
     }
 
-    // ============================================
-    // 从搜索结果页面解析漫画 - 根据实际HTML结构
-    // ============================================
     parseSearchResult = (item) => {
-        // 获取链接
         const link = item.querySelector("a[href^='/book/']")
         const href = link?.attributes?.href || ""
         const id = this.safeId(href)
         
-        // 获取标题
         const title = this.safeString(item.querySelector(".book-list-info-title")?.text)
-        
-        // 获取封面
         const img = item.querySelector(".book-list-cover-img")
         const cover = img?.attributes?.["data-original"] || img?.attributes?.src || ""
-        
-        // 获取作者
         const authorElem = item.querySelector(".book-list-info-bottom-item")
         const author = authorElem?.text?.replace("作者：", "").trim() || ""
-        
-        // 获取状态
         const statusElem = item.querySelector(".book-list-info-bottom-right-font")
         const status = statusElem?.text?.trim() || ""
-        
-        // 获取简介
         const desc = this.safeString(item.querySelector(".book-list-info-desc")?.text)
 
         return {
@@ -84,9 +59,6 @@ class ManWaBa extends ComicSource {
         }
     }
 
-    // ============================================
-    // 搜索
-    // ============================================
     search = {
         load: async (keyword, options, page) => {
             const url = `${this.baseUrl}/search?keyword=${encodeURIComponent(keyword)}&page=${page || 1}`
@@ -112,9 +84,6 @@ class ManWaBa extends ComicSource {
         }
     }
 
-    // ============================================
-    // 发现页（首页）
-    // ============================================
     explore = [{
         title: "漫蛙吧",
         type: "singlePageWithMultiPart",
@@ -122,15 +91,11 @@ class ManWaBa extends ComicSource {
             const res = await this.requestGet(this.baseUrl)
             if (res.status !== 200) throw `主页请求失败: ${res.status}`
             const doc = new HtmlDocument(res.body)
-            // TODO: 首页结构需要进一步分析
             doc.dispose()
             return {}
         }
     }]
 
-    // ============================================
-    // 分类页
-    // ============================================
     category = {
         title: "分类浏览",
         parts: [{
@@ -142,95 +107,90 @@ class ManWaBa extends ComicSource {
         }]
     }
 
-    // ============================================
-    // 分类漫画加载
-    // ============================================
     categoryComics = {
         load: async (category, param, options, page) => {
-            // TODO: 需要分析分类页面的 HTML 结构
             return { comics: [], maxPage: 1 }
         }
     }
 
-    // ============================================
-    // 漫画详情
-    // ============================================
-comic = {
-    loadInfo: async (id) => {
-        if (!id) throw "漫画ID不能为空"
-        
-        const url = `${this.baseUrl}/book/${id}`
-        const res = await this.requestGet(url, url)
-        if (res.status !== 200) throw `详情页请求失败: ${res.status}`
+    comic = {
+        loadInfo: async (id) => {
+            if (!id) throw "漫画ID不能为空"
+            
+            const url = `${this.baseUrl}/book/${id}`
+            const res = await this.requestGet(url, url)
+            if (res.status !== 200) throw `详情页请求失败: ${res.status}`
 
-        const doc = new HtmlDocument(res.body)
-        
-        const title = doc.querySelector(".book-list-info-title")?.text?.trim() || 
-                      doc.querySelector(".page-title")?.text?.trim() || 
-                      id
-        const cover = doc.querySelector(".book-list-cover-img")?.attributes?.["data-original"] || 
-                      doc.querySelector(".book-cover-img")?.attributes?.src || 
-                      ""
-        const description = doc.querySelector(".book-list-info-desc")?.text?.trim() || ""
-        const authorElem = doc.querySelector(".book-list-info-bottom-item")
-        const author = authorElem?.text?.replace("作者：", "").trim() || ""
+            const doc = new HtmlDocument(res.body)
+            
+            // 从标题中提取漫画名
+            const titleRaw = doc.querySelector("title")?.text || ""
+            const title = titleRaw.replace(/-漫蛙漫画.*$/, "").trim() || id
+            
+            // 提取作者
+            const authorElem = doc.querySelector(".detail-main-info-author")
+            const author = authorElem?.text?.replace("作者：", "").trim() || "未知"
+            
+            // 提取状态
+            const statusElem = doc.querySelector(".detail-main-info-status")
+            const status = statusElem?.text?.replace("更新状态：", "").trim() || "连载中"
+            
+            // 提取最新章节
+            const chapterElem = doc.querySelector(".detail-main-info-chapter")
+            const lastChapter = chapterElem?.text?.replace("最新章节：", "").trim() || ""
 
-        const chapters = {}
-        const chapterItems = doc.querySelectorAll(".chapter-list li, .chapters a, .list a")
-        for (const item of chapterItems) {
-            const href = item.attributes?.href || ""
-            const cid = this.safeId(href)
-            const name = item.text?.trim() || ""
-            if (cid && name) {
-                chapters[cid] = name
+            // 提取封面
+            const cover = doc.querySelector(".book-cover-img")?.attributes?.src || 
+                          doc.querySelector("img[alt*='记忆万物']")?.attributes?.src || 
+                          ""
+
+            doc.dispose()
+
+            return new ComicDetails({
+                title: title,
+                cover: cover,
+                description: `状态：${status}，最新章节：${lastChapter}`,
+                subTitle: author,
+                // 关键：tags 必须是一个 Map<String, List<String>>
+                tags: {
+                    "作者": [author],
+                    "状态": [status]
+                },
+                chapters: {},
+                url: url
+            })
+        },
+
+        loadEp: async (comicId, epId) => {
+            if (!comicId || !epId) throw "参数不能为空"
+            
+            const url = `${this.baseUrl}/read/${comicId}/${epId}`
+            const res = await this.requestGet(url, `${this.baseUrl}/book/${comicId}`)
+            if (res.status !== 200) throw `阅读页请求失败: ${res.status}`
+
+            const doc = new HtmlDocument(res.body)
+            const images = []
+            for (const img of doc.querySelectorAll("img")) {
+                const src = img.attributes?.src || ""
+                if (src && !src.includes("logo") && !src.includes("icon") && !src.includes("avatar") && !src.includes("favicon")) {
+                    images.push(src)
+                }
             }
-        }
+            doc.dispose()
 
-        doc.dispose()
-
-        return new ComicDetails({
-            title: title,
-            cover: cover,
-            description: description,
-            subTitle: author,
-            chapters: chapters,
-            url: url,
-            tags: {
-                "作者": author ? [author] : [],
-                "状态": []
+            if (images.length === 0) {
+                throw "本章未找到任何图片"
             }
-        })
-    },
+            return { images: images }
+        },
 
-    loadEp: async (comicId, epId) => {
-        if (!comicId || !epId) throw "参数不能为空"
-        
-        const url = `${this.baseUrl}/read/${comicId}/${epId}`
-        const res = await this.requestGet(url, `${this.baseUrl}/book/${comicId}`)
-        if (res.status !== 200) throw `阅读页请求失败: ${res.status}`
-
-        const doc = new HtmlDocument(res.body)
-        const images = []
-        for (const img of doc.querySelectorAll("img")) {
-            const src = img.attributes?.src || ""
-            if (src && !src.includes("logo") && !src.includes("icon") && !src.includes("avatar") && !src.includes("favicon")) {
-                images.push(src)
-            }
-        }
-        doc.dispose()
-
-        if (images.length === 0) {
-            throw "本章未找到任何图片"
-        }
-        return { images: images }
-    },
-
-    onImageLoad: (url, comicId, epId) => {
-        return {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Referer': `${this.baseUrl}/read/${comicId}/${epId}`,
-                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8'
+        onImageLoad: (url, comicId, epId) => {
+            return {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Referer': `${this.baseUrl}/read/${comicId}/${epId}`,
+                    'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8'
+                }
             }
         }
     }
