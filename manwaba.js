@@ -329,18 +329,11 @@ class ManWaBa extends ComicSource {
         },
 
         onImageLoad: (url, comicId, epId) => {
-            // 返回图片请求的Headers
-            return {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': 'image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-                    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-                    'Referer': `${this.baseUrl}/chapter/${epId}`,
-                    'Sec-Fetch-Dest': 'image',
-                    'Sec-Fetch-Mode': 'no-cors',
-                    'Sec-Fetch-Site': 'cross-site'
-                }
-            }
+    return {
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'image/jpeg,image/png,image/*;q=0.8',  // 优先JPEG/PNG
+            'Referer': `${this.baseUrl}/chapter/${epId}`
         }
     }
 }
