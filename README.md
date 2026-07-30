@@ -1,2 +1,2 @@
 # venera-sources
-嗨皮漫画源
+漫画源
