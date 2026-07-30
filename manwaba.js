@@ -204,169 +204,100 @@ class ManWaBa extends ComicSource {
     // 漫画详情 - 修复标题提取
     // ============================================
     comic = {
-        loadInfo: async (id) => {
-            if (!id) throw "漫画ID不能为空"
-            
-            const realId = id.replace(/^mw_/, '')
-            const url = `${this.baseUrl}/book/${realId}`
-            const res = await this.requestGet(url, url)
-            if (res.status !== 200) throw `详情页请求失败: ${res.status}`
+       loadInfo: async (id) => {
+    if (!id) throw "漫画ID不能为空"
+    
+    const realId = id.replace(/^mw_/, '')
+    const url = `${this.baseUrl}/book/${realId}`
+    const res = await this.requestGet(url, url)
+    if (res.status !== 200) throw `详情页请求失败: ${res.status}`
 
-            const doc = new HtmlDocument(res.body)
-            
-            // ✅ 修复：更精确地提取漫画名称
-            // 方法1：从 .detail-main-info-title 提取
-            let title = doc.querySelector(".detail-main-info-title")?.text?.trim() || ""
-            
-            // 方法2：从 .book-title 提取
-            if (!title) {
-                title = doc.querySelector(".book-title")?.text?.trim() || ""
-            }
-            
-            // 方法3：从 title 标签提取，但只取第一部分
-            if (!title) {
-                const titleRaw = doc.querySelector("title")?.text || ""
-                // 取 "-" 之前的部分，或者 "|" 之前的部分
-                title = titleRaw.split(/[-|]/)[0]?.trim() || ""
-            }
-            
-            // 方法4：从 h1 提取
-            if (!title) {
-                title = doc.querySelector("h1")?.text?.trim() || ""
-            }
-            
-            // 如果还是没找到，使用ID
-            if (!title) {
-                title = realId
-            }
-            
-            // 提取作者
-            const authorElem = doc.querySelector(".detail-main-info-author")
-            const author = authorElem?.text?.replace("作者：", "").trim() || "未知"
-            
-            // 提取状态
-            const statusElem = doc.querySelector(".detail-main-info-status")
-            const status = statusElem?.text?.replace("更新状态：", "").trim() || "连载中"
-            
-            // 提取最新章节信息
-            const chapterElem = doc.querySelector(".detail-main-info-chapter")
-            const lastChapter = chapterElem?.text?.replace("最新章节：", "").trim() || ""
+    const doc = new HtmlDocument(res.body)
+    
+    // ✅ 从Vue渲染的HTML中提取标题
+    // 方法1：从 meta 标签提取
+    let title = doc.querySelector('meta[property="og:title"]')?.attributes?.content || ""
+    
+    // 方法2：从 title 标签提取（但需要过滤掉网站名称）
+    if (!title) {
+        const titleRaw = doc.querySelector("title")?.text || ""
+        // 取 "-" 之前的部分
+        title = titleRaw.split("-")[0]?.trim() || ""
+    }
+    
+    // 方法3：从 h1 或 .title 提取
+    if (!title) {
+        title = doc.querySelector("h1")?.text?.trim() || ""
+    }
+    
+    // 如果还是没找到，使用ID
+    if (!title) {
+        title = realId
+    }
+    
+    // 提取作者
+    const authorElem = doc.querySelector(".detail-main-info-author")
+    const author = authorElem?.text?.replace("作者：", "").trim() || "未知"
+    
+    // 提取状态
+    const statusElem = doc.querySelector(".detail-main-info-status")
+    const status = statusElem?.text?.replace("更新状态：", "").trim() || "连载中"
+    
+    // 提取最新章节信息
+    const chapterElem = doc.querySelector(".detail-main-info-chapter")
+    const lastChapter = chapterElem?.text?.replace("最新章节：", "").trim() || ""
 
-            // 提取封面
-            let cover = doc.querySelector(".book-cover-img")?.attributes?.src || 
-                        doc.querySelector(".detail-cover-img")?.attributes?.src ||
-                        doc.querySelector("img[alt*='封面']")?.attributes?.src ||
-                        ""
-            cover = this.toAbsoluteUrl(cover)
+    // 提取封面
+    let cover = doc.querySelector(".book-cover-img")?.attributes?.src || 
+                doc.querySelector(".detail-cover-img")?.attributes?.src ||
+                doc.querySelector("img[alt*='封面']")?.attributes?.src ||
+                ""
+    cover = this.toAbsoluteUrl(cover)
 
-            // 提取章节列表
-            const chapters = {}
-            
-            const chapterLinks = doc.querySelectorAll(".detail-list-1 a, .chapterlist a, .chapter-item a, .chapter-link, .chapter-list a, .detail-list-select a")
-            for (const item of chapterLinks) {
-                const href = item.attributes?.href || ""
-                // 从 /chapter/31440179 提取 31440179
-                const cid = href.split("/").pop() || ""
-                const name = item.text?.trim() || ""
-                if (cid && name && !isNaN(cid) && cid.length > 0) {
-                    chapters[cid] = name
-                }
-            }
+    // 提取章节列表
+    const chapters = {}
+    
+    // 从Vue渲染的章节列表提取
+    const chapterLinks = doc.querySelectorAll(".detail-list-1 a, .chapterlist a, .chapter-item a, .chapter-link, .chapter-list a, .detail-list-select a, a[href^='/chapter/']")
+    for (const item of chapterLinks) {
+        const href = item.attributes?.href || ""
+        // 从 /chapter/31440179 提取 31440179
+        const cid = href.split("/").pop() || ""
+        const name = item.text?.trim() || ""
+        if (cid && name && !isNaN(cid) && cid.length > 0) {
+            chapters[cid] = name
+        }
+    }
 
-            // 如果上面的方法没有找到，尝试从最新章节链接提取
-            if (Object.keys(chapters).length === 0) {
-                const chapterLink = doc.querySelector(".detail-main-info-chapter a")
-                if (chapterLink) {
-                    const href = chapterLink.attributes?.href || ""
-                    const cid = href.split("/").pop() || ""
-                    if (cid && !isNaN(cid) && cid.length > 0) {
-                        chapters[cid] = lastChapter || "第1话"
-                    }
-                }
-            }
-
-            // 如果还是没找到，使用漫画ID作为章节ID（临时方案）
-            if (Object.keys(chapters).length === 0) {
-                chapters[realId] = lastChapter || "第1话"
-            }
-
-            doc.dispose()
-
-            return new ComicDetails({
-                title: title,
-                cover: cover,
-                description: `状态：${status}，最新章节：${lastChapter}`,
-                subTitle: author,
-                tags: {
-                    "作者": [author],
-                    "状态": [status]
-                },
-                chapters: chapters,
-                url: url
-            })
-        },
-
-        // ============================================
-        // 加载章节图片
-        // ============================================
-        loadEp: async (comicId, epId) => {
-            if (!comicId || !epId) {
-                throw "漫画ID或章节ID不能为空"
-            }
-            
-            const realComicId = comicId.replace(/^mw_/, '')
-            
-            const url = `${this.baseUrl}/chapter/${epId}`
-            const res = await this.requestGet(url, `${this.baseUrl}/book/${realComicId}`)
-            if (res.status !== 200) throw `阅读页请求失败: ${res.status}`
-
-            const doc = new HtmlDocument(res.body)
-            const images = []
-            
-            const imgElements = doc.querySelectorAll("img.content-img, img.lazy_img, .img-content img")
-            for (const img of imgElements) {
-                let src = img.attributes?.["data-r-src"] || 
-                          img.attributes?.["data-original"] || 
-                          img.attributes?.src || ""
-                
-                src = this.toAbsoluteUrl(src)
-                
-                if (src && 
-                    typeof src === 'string' && 
-                    src.length > 0 &&
-                    src.startsWith("https://") &&
-                    !src.includes("logo") && 
-                    !src.includes("icon") && 
-                    !src.includes("avatar") && 
-                    !src.includes("favicon") &&
-                    !src.includes("loading") &&
-                    !src.includes("blank") &&
-                    !src.includes("imagecover3") &&
-                    !src.includes("mwmissing") &&
-                    !src.includes("blob:")) {
-                    images.push(src)
-                }
-            }
-            doc.dispose()
-
-            if (images.length === 0) {
-                throw "本章未找到任何图片"
-            }
-            
-            return { images: images }
-        },
-
-        // ============================================
-        // 图片加载配置
-        // ============================================
-        onImageLoad: (url, comicId, epId) => {
-            return {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                    'Referer': `${this.baseUrl}/chapter/${epId}`,
-                    'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8'
-                }
+    // 如果上面的方法没有找到，尝试从最新章节链接提取
+    if (Object.keys(chapters).length === 0) {
+        const chapterLink = doc.querySelector(".detail-main-info-chapter a")
+        if (chapterLink) {
+            const href = chapterLink.attributes?.href || ""
+            const cid = href.split("/").pop() || ""
+            if (cid && !isNaN(cid) && cid.length > 0) {
+                chapters[cid] = lastChapter || "第1话"
             }
         }
     }
+
+    // 如果还是没找到，使用漫画ID作为章节ID（临时方案）
+    if (Object.keys(chapters).length === 0) {
+        chapters[realId] = lastChapter || "第1话"
+    }
+
+    doc.dispose()
+
+    return new ComicDetails({
+        title: title,
+        cover: cover,
+        description: `状态：${status}，最新章节：${lastChapter}`,
+        subTitle: author,
+        tags: {
+            "作者": [author],
+            "状态": [status]
+        },
+        chapters: chapters,
+        url: url
+    })
 }
