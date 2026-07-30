@@ -1,376 +1,248 @@
 /** @type {import('./_venera_.js')} */
-
-const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-
 class ManWaBa extends ComicSource {
     name = "漫蛙吧"
-    key = "manwaba_final_v5"
-    version = "1.0.37"
-    minAppVersion = "1.6.0"
+    key = "manwaba_api"
+    version = "1.0.38"
+    minAppVersion = "1.4.0"
     url = "https://cdn.jsdelivr.net/gh/amenoshigure/venera-sources@main/manwaba.js"
 
-    baseUrl = "https://manwa.me"
-    imageBaseUrl = "https://tu.mwzu.cc"
-
-    // ============================================
-    // Headers
-    // ============================================
-    get headers() {
-        return {
-            "User-Agent": UA,
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
-            "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1",
-            "Referer": this.baseUrl,
-        }
-    }
+    api = "https://mwuu.cc/api"
 
     // ============================================
     // 工具方法
     // ============================================
-    toAbsoluteUrl = (url) => {
-        if (!url) return ""
-        if (typeof url !== 'string') return ""
-        url = url.trim()
-        if (!url) return ""
-        if (url.startsWith('https://')) return url
-        if (url.startsWith('http://')) return url.replace('http://', 'https://')
-        if (url.startsWith('//')) return `https:${url}`
-        const base = this.imageBaseUrl.endsWith('/') ? this.imageBaseUrl.slice(0, -1) : this.imageBaseUrl
-        const path = url.startsWith('/') ? url : `/${url}`
-        return `${base}${path}`
-    }
-
-    async requestGet(url, referer = this.baseUrl) {
-        const headers = { ...this.headers, "Referer": referer }
-        const resp = await Network.get(url, headers)
-        return resp
-    }
-
-    safeString = (value) => {
-        return value?.trim() || ""
-    }
-
-    safeId = (href) => {
-        if (!href) return ""
-        const parts = href.split("/")
-        return parts[parts.length - 1] || ""
-    }
-
-    // ============================================
-    // ✅ 解析搜索结果（修正选择器）
-    // ============================================
-    parseSearchResult = (item) => {
-        // 查找 a[href^='/comic/']
-        const link = item.querySelector("a[href^='/comic/']")
-        if (!link) return null
-        
-        const href = link.attributes?.href || ""
-        const baseId = this.safeId(href)
-        if (!baseId) return null
-        
-        const id = `mw_${baseId}`
-        
-        // 查找 .thumb_img.lazy 的 data-original
-        const thumb = item.querySelector(".thumb_img.lazy")
-        let cover = thumb?.attributes?.["data-original"] || ""
-        cover = this.toAbsoluteUrl(cover)
-        
-        // 如果没有封面，跳过
-        if (!cover) return null
-        
-        // 标题：.body .title
-        const title = item.querySelector(".body .title")?.text?.trim() || baseId
-        
-        // 作者：.body .row 第一个
-        const author = item.querySelector(".body .row:first-child")?.text?.trim() || ""
-        
-        // 描述：.body .text
-        const desc = item.querySelector(".body .text")?.text?.trim() || ""
-        
-        // 标签：.badge-item
-        const tagElements = item.querySelectorAll(".body .badge-item")
-        const tags = tagElements.map(el => el.text?.trim()).filter(t => t)
-
-        return {
-            id: id,
-            title: title,
-            cover: cover,
-            subTitle: author,
-            description: desc,
-            tags: tags
+    async fetchJson(url, { method = "GET", params, headers, payload } = {}) {
+        if (params) {
+            let params_str = Object.keys(params)
+                .map((key) => `${key}=${params[key]}`)
+                .join("&");
+            url += `?${params_str}`;
         }
-    }
-
-    // ============================================
-    // ✅ 解析首页漫画
-    // ============================================
-    parseHomeComic = (item) => {
-        const link = item.querySelector("a[href^='/comic/']")
-        if (!link) return null
-        
-        const href = link.attributes?.href || ""
-        const baseId = this.safeId(href)
-        if (!baseId) return null
-        
-        const id = `mw_${baseId}`
-        
-        const thumb = item.querySelector(".thumb_img.lazy")
-        let cover = thumb?.attributes?.["data-src"] || ""
-        cover = this.toAbsoluteUrl(cover)
-        
-        if (!cover) return null
-        
-        const title = item.querySelector(".title")?.text?.trim() || baseId
-        const desc = item.querySelector(".desc")?.text?.trim() || ""
-
-        return {
-            id: id,
-            title: title,
-            cover: cover,
-            subTitle: "",
-            description: desc,
-            tags: []
+        let res = await Network.sendRequest(method, url, headers, payload);
+        if (res.status !== 200) {
+            throw `Invalid status code: ${res.status}`;
         }
+        let json = JSON.parse(res.body);
+        return json;
     }
 
     // ============================================
-    // 搜索 - 修正选择器
-    // ============================================
-    search = {
-        load: async (keyword, options, page) => {
-            const url = `${this.baseUrl}/search?keyword=${encodeURIComponent(keyword)}&page=${page || 1}`
-            const res = await this.requestGet(url, this.baseUrl)
-            if (res.status !== 200) throw `搜索页面请求失败: ${res.status}`
-
-            const doc = new HtmlDocument(res.body)
-            // ✅ 修正：使用 .books-rows .item
-            const items = doc.querySelectorAll(".books-rows .item")
-            const comics = []
-
-            for (const item of items) {
-                const comic = this.parseSearchResult(item)
-                if (comic) {
-                    comics.push(comic)
-                }
-            }
-            
-            doc.dispose()
-            return { comics: comics, maxPage: 1 }
-        }
-    }
-
-    // ============================================
-    // Explore
+    // Explore - 使用API
     // ============================================
     explore = [{
         title: "漫蛙吧",
         type: "singlePageWithMultiPart",
         load: async () => {
-            const res = await this.requestGet(this.baseUrl)
-            if (res.status !== 200) throw `主页请求失败: ${res.status}`
-            
-            const doc = new HtmlDocument(res.body)
-            const result = {}
-            
-            const sections = doc.querySelectorAll(".bm-box")
-            
-            for (const section of sections) {
-                const titleEl = section.querySelector(".tl-head .title")
-                const title = titleEl?.text?.trim() || "推荐"
-                
-                const items = section.querySelectorAll(".books-row .item")
-                const comics = []
-                
-                for (const item of items) {
-                    const comic = this.parseHomeComic(item)
-                    if (comic) {
-                        comics.push(comic)
-                    }
-                }
-                
-                if (comics.length > 0) {
-                    result[title] = comics
+            const params = { page: 1, pageSize: 6, type: "", flag: false };
+            const data = await this.fetchJson(`${this.api}/home`, { params })
+                .then(res => res.data);
+
+            const lists = {
+                "热门": data.comicList || [],
+                "最新完整版": data.gufengList || [],
+                "最新更新": data.xuanhuanList || [],
+                "热门收藏": data.xiaoyuanList || []
+            };
+
+            const parseComic = (comic) => ({
+                id: `mw_${comic.id}`,
+                title: comic.title || "",
+                cover: comic.pic || "",
+                subTitle: comic.author || "",
+                tags: comic.tags ? comic.tags.split(",") : [],
+                description: comic.intro || ""
+            });
+
+            const result = {};
+            for (const [key, list] of Object.entries(lists)) {
+                if (list && list.length > 0) {
+                    result[key] = list.map(parseComic);
                 }
             }
-            
-            doc.dispose()
-            return result
+            return result;
         }
     }]
 
     // ============================================
-    // 分类页
+    // 分类
     // ============================================
     category = {
-        title: "分类浏览",
+        title: "漫蛙吧",
         parts: [{
-            name: "分类",
+            name: "类型",
             type: "fixed",
-            categories: ["全部", "热血", "玄幻", "恋爱", "冒险", "古风", "都市", "穿越", "奇幻", "搞笑", "战斗", "重生", "逆袭", "BL", "韩漫"],
-            categoryParams: ["", "热血", "玄幻", "恋爱", "冒险", "古风", "都市", "穿越", "奇幻", "搞笑", "战斗", "重生", "逆袭", "BL", "韩漫"],
+            categories: ["全部", "热血", "玄幻", "恋爱", "冒险", "古风", "都市", "穿越", "奇幻", "搞笑", "战斗", "重生", "逆袭", "BL", "韩漫", "完整版", "19r", "台版"],
+            categoryParams: ["", "热血", "玄幻", "恋爱", "冒险", "古风", "都市", "穿越", "奇幻", "搞笑", "战斗", "重生", "逆袭", "BL", "韩漫", "完整版", "19r", "台版"],
             itemType: "category"
         }]
     }
 
     // ============================================
-    // 分类漫画加载
+    // 分类漫画 - 使用API
     // ============================================
     categoryComics = {
         load: async (category, param, options, page) => {
-            let url = `${this.baseUrl}/search?keyword=${encodeURIComponent(category)}&page=${page || 1}`
-            if (category === "全部" || !category) {
-                url = `${this.baseUrl}/?page=${page || 1}`
-            }
-            
-            try {
-                const res = await this.requestGet(url, this.baseUrl)
-                if (res.status !== 200) throw `分类页面请求失败: ${res.status}`
+            const pathMap = {
+                "": "/cate",
+                "热血": "/cate/hotblooded",
+                "玄幻": "/cate/xuanhuan",
+                "恋爱": "/cate/romance",
+                "冒险": "/cate/adventure",
+                "古风": "/cate/historical",
+                "都市": "/cate/urban",
+                "穿越": "/cate/transmigration",
+                "奇幻": "/cate/fantasy",
+                "搞笑": "/cate/comedy",
+                "战斗": "/cate/action",
+                "重生": "/cate/rebirth",
+                "逆袭": "/cate/counterattack",
+                "BL": "/cate/bl",
+                "韩漫": "/cate/manhwa",
+                "完整版": "/cate/fullversion",
+                "19r": "/cate/19plus",
+                "台版": "/cate/taiwanver",
+            };
 
-                const doc = new HtmlDocument(res.body)
-                const items = doc.querySelectorAll(".books-rows .item, .books-row .item")
-                const comics = []
+            const url = this.api + (pathMap[param] || "/cate");
+            const payload = JSON.stringify({
+                page: { page: page || 1, pageSize: 20 },
+                category: "comic",
+                sort: parseInt(options?.[2] || 0),
+                comic: {
+                    status: parseInt(options?.[0] || 2),
+                    day: parseInt(options?.[1] || 0),
+                    tag: param || ""
+                },
+                video: { year: 0, typeId: 0, typeId1: 0, area: "", lang: "", status: -1, day: 0 },
+                novel: { status: -1, day: 0, sortId: 0 }
+            });
 
-                for (const item of items) {
-                    const comic = this.parseSearchResult(item) || this.parseHomeComic(item)
-                    if (comic) {
-                        comics.push(comic)
-                    }
-                }
-                
-                doc.dispose()
-                return { comics: comics, maxPage: 1 }
-            } catch (e) {
-                return { comics: [], maxPage: 1 }
-            }
+            const data = await this.fetchJson(url, { method: "POST", payload })
+                .then(res => res.data?.list || []);
+
+            const parseComic = (comic) => ({
+                id: `mw_${comic.url?.split("/").pop() || comic.id}`,
+                title: comic.title || "",
+                cover: comic.pic || "",
+                subTitle: comic.author || "",
+                tags: comic.tags ? comic.tags.split(",") : [],
+                description: comic.intro || "",
+                status: comic.status == 0 ? "连载中" : "已完结"
+            });
+
+            return {
+                comics: data.map(parseComic),
+                maxPage: 100
+            };
+        },
+        optionList: [
+            { options: ["2-全部", "0-连载中", "1-已完结"] },
+            { options: ["0-全部", "1-周一", "2-周二", "3-周三", "4-周四", "5-周五", "6-周六", "7-周日"] },
+            { options: ["0-更新", "1-新作", "2-畅销", "3-热门", "4-收藏"] }
+        ]
+    }
+
+    // ============================================
+    // 搜索 - 使用API
+    // ============================================
+    search = {
+        load: async (keyword, options, page) => {
+            const pageSize = 20;
+            const data = await this.fetchJson(`${this.api}/search`, {
+                params: { keyword, type: "mh", page: page || 1, pageSize }
+            }).then(res => res.data);
+
+            const comics = (data.list || []).map(item => ({
+                id: `mw_${item.id}`,
+                title: item.title || "",
+                cover: item.cover || "",
+                subTitle: item.author || "",
+                tags: item.tags ? item.tags.split(",") : [],
+                description: item.description || "",
+                status: item.status == 0 ? "连载中" : "已完结"
+            }));
+
+            return {
+                comics: comics,
+                maxPage: Math.ceil((data.total || 0) / pageSize)
+            };
         }
     }
 
     // ============================================
-    // 漫画详情
+    // 漫画详情 - 使用API
     // ============================================
     comic = {
         loadInfo: async (id) => {
-            if (!id) throw "漫画ID不能为空"
-            const realId = id.replace(/^mw_/, '')
-            const url = `${this.baseUrl}/comic/${realId}`
-            const res = await this.requestGet(url, url)
-            if (res.status !== 200) throw `详情页请求失败: ${res.status}`
+            const realId = id.replace(/^mw_/, '');
+            const data = await this.fetchJson(`${this.api}/comic/${realId}`)
+                .then(res => res.data);
 
-            const doc = new HtmlDocument(res.body)
-            
-            const title = doc.querySelector("#page-title")?.text?.trim() || realId
-            const author = doc.querySelector("#author-container a")?.text?.trim() || "未知"
-            const status = doc.querySelector("#status")?.text?.trim() || "连载中"
-            const lastChapter = doc.querySelector("#newch")?.text?.trim() || ""
+            // 获取章节列表
+            const chapterApi = `${this.api}/comic/chapter`;
+            const totalRes = await this.fetchJson(chapterApi, {
+                params: { comicId: realId, page: 1, pageSize: 1 }
+            });
+            const total = totalRes.pagination?.total || 0;
 
-            let cover = doc.querySelector(".comic-cover")?.attributes?.src || ""
-            cover = this.toAbsoluteUrl(cover)
-
-            const chapters = new Map()
-            const chapterLinks = doc.querySelectorAll("#chapter-grid-container .chapter-item")
-            for (const item of chapterLinks) {
-                const href = item.attributes?.href || ""
-                const cid = href.split("/").pop() || ""
-                const name = item.querySelector(".chapter-name")?.text?.trim() || ""
-                if (cid && name && cid.length > 0) {
-                    chapters.set(cid, name)
-                }
-            }
-
-            if (chapters.size === 0) {
-                chapters.set(realId, lastChapter || "第1话")
-            }
-
-            doc.dispose()
+            const chapterRes = await this.fetchJson(chapterApi, {
+                params: { comicId: realId, page: 1, pageSize: total || 1 }
+            });
+            const chapters = new Map();
+            (chapterRes.data || []).forEach(item => {
+                chapters.set(item.id.toString(), item.title.toString());
+            });
 
             return new ComicDetails({
-                title: title,
-                cover: cover,
-                description: `状态：${status}，最新章节：${lastChapter}`,
-                subTitle: author,
+                title: data.title?.toString() || realId,
+                subTitle: data.author?.toString() || "未知",
+                cover: data.cover || "",
                 tags: {
-                    "作者": [author],
-                    "状态": [status]
+                    "类型": data.tags ? data.tags.split(",") : [],
+                    "状态": data.status == 0 ? "连载中" : "已完结"
                 },
                 chapters: chapters,
-                url: url
-            })
+                description: data.intro || "",
+                updateTime: data.editTime ? new Date(data.editTime * 1000).toLocaleDateString() : ""
+            });
         },
 
-        // ============================================
-        // 加载章节图片
-        // ============================================
         loadEp: async (comicId, epId) => {
-            if (!comicId || !epId) {
-                throw "漫画ID或章节ID不能为空"
-            }
-            const realComicId = comicId.replace(/^mw_/, '')
+            const realComicId = comicId.replace(/^mw_/, '');
             
-            const url = `${this.baseUrl}/comic/${realComicId}/${epId}`
-            const res = await this.requestGet(url, `${this.baseUrl}/comic/${realComicId}`)
-            if (res.status !== 200) throw `阅读页请求失败: ${res.status}`
+            // 获取图片总数
+            const imgApi = `${this.api}/comic/image/${epId}`;
+            const pageNum = await this.fetchJson(imgApi, {
+                params: { page: 1, pageSize: 1, imageSource: "https://tu.mhttu.cc" }
+            }).then(res => res.data?.pagination?.total || 0);
 
-            const doc = new HtmlDocument(res.body)
-            const images = []
-            
-            const imgElements = doc.querySelectorAll("#showimgcontent figure.cImg img.lazy-image")
-            for (const img of imgElements) {
-                let src = img.attributes?.["data-src"] || img.attributes?.src || ""
-                
-                src = this.toAbsoluteUrl(src)
-                
-                if (src && 
-                    typeof src === 'string' && 
-                    src.length > 0 &&
-                    src.startsWith("https://") &&
-                    !src.includes("logo") && 
-                    !src.includes("icon") && 
-                    !src.includes("avatar") && 
-                    !src.includes("favicon") &&
-                    !src.includes("loading") &&
-                    !src.includes("blank") &&
-                    !src.includes("imagecover3") &&
-                    !src.includes("mwmissing") &&
-                    !src.includes("blob:") &&
-                    !src.includes("data:image")) {
-                    images.push(src)
+            // 获取所有图片
+            const imageRes = await this.fetchJson(imgApi, {
+                params: {
+                    page: 1,
+                    page_size: pageNum || 1,
+                    imageSource: "https://tu.mhttu.cc"
                 }
-            }
-            doc.dispose()
+            }).then(res => res.data?.images || []);
+
+            const images = imageRes.map(item => item.url).filter(url => url);
 
             if (images.length === 0) {
-                throw "本章未找到任何图片"
+                throw "本章未找到任何图片";
             }
-            
-            return { images: images }
+
+            return { images };
         },
 
         onImageLoad: (url, comicId, epId) => {
-            let fullUrl = this.toAbsoluteUrl(url)
             return {
-                url: fullUrl,
+                url: url,
                 headers: {
-                    "Referer": `${this.baseUrl}/comic/${comicId.replace(/^mw_/, '')}/${epId}`,
+                    "Referer": "https://manwa.me",
                     "User-Agent": UA,
                     "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
                     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-                },
-            }
-        },
-
-        onThumbnailLoad: (url) => {
-            let fullUrl = this.toAbsoluteUrl(url)
-            return {
-                url: fullUrl,
-                headers: {
-                    "Referer": this.baseUrl,
-                    "User-Agent": UA,
-                    "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
-                    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-                },
+                }
             }
         }
     }
