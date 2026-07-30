@@ -2,6 +2,7 @@
   {
     "name": "嗨皮漫画",
     "url": "https://raw.githubusercontent.com/amenoshigure/venera-sources/main/happy.js",
-    "version": "1.0.0"
+    "version": "1.0.1",
+    "description": "嗨皮漫画源 - 支持搜索、分类、排行榜、评论"
   }
 ]
