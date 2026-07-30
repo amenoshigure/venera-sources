@@ -2,7 +2,7 @@
 class ManWaBa extends ComicSource {
     name = "漫蛙吧"
     key = "manwaba"
-    version = "1.0.8"
+    version = "1.0.9"
     minAppVersion = "1.6.0"
     url = "https://cdn.jsdelivr.net/gh/amenoshigure/venera-sources@main/manwaba.js"
 
@@ -35,6 +35,9 @@ class ManWaBa extends ComicSource {
         return parts[parts.length - 1] || ""
     }
 
+    // ============================================
+    // 从搜索结果页面解析漫画
+    // ============================================
     parseSearchResult = (item) => {
         const link = item.querySelector("a[href^='/book/']")
         const href = link?.attributes?.href || ""
@@ -59,6 +62,9 @@ class ManWaBa extends ComicSource {
         }
     }
 
+    // ============================================
+    // 搜索
+    // ============================================
     search = {
         load: async (keyword, options, page) => {
             const url = `${this.baseUrl}/search?keyword=${encodeURIComponent(keyword)}&page=${page || 1}`
@@ -84,6 +90,9 @@ class ManWaBa extends ComicSource {
         }
     }
 
+    // ============================================
+    // 发现页（首页）
+    // ============================================
     explore = [{
         title: "漫蛙吧",
         type: "singlePageWithMultiPart",
@@ -96,6 +105,9 @@ class ManWaBa extends ComicSource {
         }
     }]
 
+    // ============================================
+    // 分类页
+    // ============================================
     category = {
         title: "分类浏览",
         parts: [{
@@ -107,100 +119,149 @@ class ManWaBa extends ComicSource {
         }]
     }
 
+    // ============================================
+    // 分类漫画加载
+    // ============================================
     categoryComics = {
         load: async (category, param, options, page) => {
             return { comics: [], maxPage: 1 }
         }
     }
 
-comic = {
-    loadInfo: async (id) => {
-        if (!id) throw "漫画ID不能为空"
-        
-        const url = `${this.baseUrl}/book/${id}`
-        const res = await this.requestGet(url, url)
-        if (res.status !== 200) throw `详情页请求失败: ${res.status}`
+    // ============================================
+    // 漫画详情（方案一：提取真实章节ID）
+    // ============================================
+    comic = {
+        loadInfo: async (id) => {
+            if (!id) throw "漫画ID不能为空"
+            
+            const url = `${this.baseUrl}/book/${id}`
+            const res = await this.requestGet(url, url)
+            if (res.status !== 200) throw `详情页请求失败: ${res.status}`
 
-        const doc = new HtmlDocument(res.body)
-        
-        const titleRaw = doc.querySelector("title")?.text || ""
-        const title = titleRaw.replace(/-漫蛙漫画.*$/, "").trim() || id
-        
-        const authorElem = doc.querySelector(".detail-main-info-author")
-        const author = authorElem?.text?.replace("作者：", "").trim() || "未知"
-        
-        const statusElem = doc.querySelector(".detail-main-info-status")
-        const status = statusElem?.text?.replace("更新状态：", "").trim() || "连载中"
-        
-        const chapterElem = doc.querySelector(".detail-main-info-chapter")
-        const lastChapter = chapterElem?.text?.replace("最新章节：", "").trim() || ""
+            const doc = new HtmlDocument(res.body)
+            
+            // 从标题提取漫画名
+            const titleRaw = doc.querySelector("title")?.text || ""
+            const title = titleRaw.replace(/-漫蛙漫画.*$/, "").trim() || id
+            
+            // 提取作者
+            const authorElem = doc.querySelector(".detail-main-info-author")
+            const author = authorElem?.text?.replace("作者：", "").trim() || "未知"
+            
+            // 提取状态
+            const statusElem = doc.querySelector(".detail-main-info-status")
+            const status = statusElem?.text?.replace("更新状态：", "").trim() || "连载中"
+            
+            // 提取最新章节信息
+            const chapterElem = doc.querySelector(".detail-main-info-chapter")
+            const lastChapter = chapterElem?.text?.replace("最新章节：", "").trim() || ""
 
-        const cover = doc.querySelector(".book-cover-img")?.attributes?.src || 
-                      doc.querySelector("img[alt*='记忆万物']")?.attributes?.src || 
-                      ""
+            // 提取封面
+            const cover = doc.querySelector(".book-cover-img")?.attributes?.src || 
+                          doc.querySelector("img[alt*='记忆万物']")?.attributes?.src || 
+                          ""
 
-        doc.dispose()
-
-        // 创建占位章节
-        const chapters = {}
-        chapters["1"] = lastChapter || "第1话"
-
-        return new ComicDetails({
-            title: title,
-            cover: cover,
-            description: `状态：${status}，最新章节：${lastChapter}`,
-            subTitle: author,
-            tags: {
-                "作者": [author],
-                "状态": [status]
-            },
-            chapters: chapters,
-            url: url
-        })
-    },
-
-    loadEp: async (comicId, epId) => {
-        if (!comicId || !epId) {
-            throw "漫画ID或章节ID不能为空"
-        }
-        
-        const url = `${this.baseUrl}/read/${comicId}/${epId}`
-        const res = await this.requestGet(url, `${this.baseUrl}/book/${comicId}`)
-        if (res.status !== 200) throw `阅读页请求失败: ${res.status}`
-
-        const doc = new HtmlDocument(res.body)
-        const images = []
-        for (const img of doc.querySelectorAll("img")) {
-            const src = img.attributes?.src || ""
-            if (src && 
-                typeof src === 'string' && 
-                src.length > 0 &&
-                !src.includes("logo") && 
-                !src.includes("icon") && 
-                !src.includes("avatar") && 
-                !src.includes("favicon") &&
-                !src.includes("loading") &&
-                !src.includes("blank")) {
-                images.push(src)
+            // ============================================
+            // 【关键】提取章节列表，获取真实的章节ID
+            // ============================================
+            const chapters = {}
+            
+            // 方法1：查找章节列表容器中的链接
+            const chapterLinks = doc.querySelectorAll(".chapter-list a, .chapters a, .list a, .chapter-item a, .chapter-link")
+            for (const item of chapterLinks) {
+                const href = item.attributes?.href || ""
+                // 提取URL中的数字ID
+                const cid = href.split("/").pop() || ""
+                const name = item.text?.trim() || ""
+                if (cid && name && !isNaN(cid)) {
+                    chapters[cid] = name
+                }
             }
-        }
-        doc.dispose()
 
-        if (images.length === 0) {
-            throw "本章未找到任何图片"
-        }
-        
-        return { 
-            images: images.filter(img => img != null && img.length > 0)
-        }
-    },
+            // 方法2：如果方法1没有找到，尝试从最新章节链接提取
+            if (Object.keys(chapters).length === 0) {
+                const chapterLink = doc.querySelector(".detail-main-info-chapter a")
+                if (chapterLink) {
+                    const href = chapterLink.attributes?.href || ""
+                    const cid = href.split("/").pop() || ""
+                    if (cid && !isNaN(cid)) {
+                        chapters[cid] = lastChapter || "第1话"
+                    }
+                }
+            }
 
-    onImageLoad: (url, comicId, epId) => {
-        return {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Referer': `${this.baseUrl}/read/${comicId}/${epId}`,
-                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8'
+            // 方法3：如果还是没找到，使用漫画ID作为章节ID（临时方案）
+            if (Object.keys(chapters).length === 0) {
+                chapters[id] = lastChapter || "第1话"
+            }
+
+            doc.dispose()
+
+            return new ComicDetails({
+                title: title,
+                cover: cover,
+                description: `状态：${status}，最新章节：${lastChapter}`,
+                subTitle: author,
+                tags: {
+                    "作者": [author],
+                    "状态": [status]
+                },
+                chapters: chapters,
+                url: url
+            })
+        },
+
+        // ============================================
+        // 加载章节图片
+        // ============================================
+        loadEp: async (comicId, epId) => {
+            if (!comicId || !epId) {
+                throw "漫画ID或章节ID不能为空"
+            }
+            
+            // 构建阅读页URL
+            const url = `${this.baseUrl}/read/${comicId}/${epId}`
+            const res = await this.requestGet(url, `${this.baseUrl}/book/${comicId}`)
+            if (res.status !== 200) throw `阅读页请求失败: ${res.status}`
+
+            const doc = new HtmlDocument(res.body)
+            const images = []
+            for (const img of doc.querySelectorAll("img")) {
+                const src = img.attributes?.src || ""
+                if (src && 
+                    typeof src === 'string' && 
+                    src.length > 0 &&
+                    !src.includes("logo") && 
+                    !src.includes("icon") && 
+                    !src.includes("avatar") && 
+                    !src.includes("favicon") &&
+                    !src.includes("loading") &&
+                    !src.includes("blank")) {
+                    images.push(src)
+                }
+            }
+            doc.dispose()
+
+            if (images.length === 0) {
+                throw "本章未找到任何图片"
+            }
+            
+            return { 
+                images: images.filter(img => img != null && img.length > 0)
+            }
+        },
+
+        // ============================================
+        // 图片加载配置
+        // ============================================
+        onImageLoad: (url, comicId, epId) => {
+            return {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Referer': `${this.baseUrl}/read/${comicId}/${epId}`,
+                    'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8'
+                }
             }
         }
     }
