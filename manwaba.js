@@ -2,12 +2,12 @@
 class ManWaBa extends ComicSource {
     name = "漫蛙吧"
     key = "manwaba"
-    version = "1.0.12"
+    version = "1.0.13"
     minAppVersion = "1.6.0"
     url = "https://cdn.jsdelivr.net/gh/amenoshigure/venera-sources@main/manwaba.js"
 
     baseUrl = "https://manwa.me"
-    imageBaseUrl = "https://mwappimgs.cc"  // 图片CDN域名
+    imageBaseUrl = "https://mwappimgs.cc"
 
     getHeaders(referer = this.baseUrl) {
         return {
@@ -19,13 +19,12 @@ class ManWaBa extends ComicSource {
         }
     }
 
-    // 确保URL是完整的
     ensureFullUrl = (url, base = this.baseUrl) => {
         if (!url) return ""
+        if (typeof url !== 'string') return ""
         if (url.startsWith('http://') || url.startsWith('https://')) {
             return url
         }
-        // 如果是相对路径，拼接base
         const baseUrl = base.endsWith('/') ? base.slice(0, -1) : base
         const path = url.startsWith('/') ? url : `/${url}`
         return `${baseUrl}${path}`
@@ -49,9 +48,6 @@ class ManWaBa extends ComicSource {
         return parts[parts.length - 1] || ""
     }
 
-    // ============================================
-    // 从搜索结果页面解析漫画
-    // ============================================
     parseSearchResult = (item) => {
         const link = item.querySelector("a[href^='/book/']")
         const href = link?.attributes?.href || ""
@@ -78,9 +74,6 @@ class ManWaBa extends ComicSource {
         }
     }
 
-    // ============================================
-    // 搜索
-    // ============================================
     search = {
         load: async (keyword, options, page) => {
             const url = `${this.baseUrl}/search?keyword=${encodeURIComponent(keyword)}&page=${page || 1}`
@@ -106,9 +99,6 @@ class ManWaBa extends ComicSource {
         }
     }
 
-    // ============================================
-    // 发现页（首页）
-    // ============================================
     explore = [{
         title: "漫蛙吧",
         type: "singlePageWithMultiPart",
@@ -121,9 +111,6 @@ class ManWaBa extends ComicSource {
         }
     }]
 
-    // ============================================
-    // 分类页
-    // ============================================
     category = {
         title: "分类浏览",
         parts: [{
@@ -135,9 +122,6 @@ class ManWaBa extends ComicSource {
         }]
     }
 
-    // ============================================
-    // 分类漫画加载
-    // ============================================
     categoryComics = {
         load: async (category, param, options, page) => {
             let url = `${this.baseUrl}/booklist`
@@ -197,9 +181,6 @@ class ManWaBa extends ComicSource {
         }
     }
 
-    // ============================================
-    // 漫画详情
-    // ============================================
     comic = {
         loadInfo: async (id) => {
             if (!id) throw "漫画ID不能为空"
@@ -270,9 +251,6 @@ class ManWaBa extends ComicSource {
             })
         },
 
-        // ============================================
-        // 加载章节图片
-        // ============================================
         loadEp: async (comicId, epId) => {
             if (!comicId || !epId) {
                 throw "漫画ID或章节ID不能为空"
@@ -291,10 +269,8 @@ class ManWaBa extends ComicSource {
                           img.attributes?.["data-original"] || 
                           img.attributes?.src || ""
                 
-                // 确保图片URL是完整的
                 src = this.ensureFullUrl(src, this.imageBaseUrl)
                 
-                // 过滤无效图片
                 if (src && 
                     typeof src === 'string' && 
                     src.length > 0 &&
@@ -307,7 +283,7 @@ class ManWaBa extends ComicSource {
                     !src.includes("imagecover3") &&
                     !src.includes("mwmissing") &&
                     !src.startsWith("blob:") &&
-                    src.startsWith("http")) {  // 确保是完整的HTTP URL
+                    src.startsWith("http")) {
                     images.push(src)
                 }
             }
@@ -317,19 +293,16 @@ class ManWaBa extends ComicSource {
                 throw "本章未找到任何图片"
             }
             
-            return { 
-                images: images
-            }
+            return { images: images }
         },
 
         // ============================================
-        // 图片加载配置
+        // 图片加载配置 - 关键修复
         // ============================================
         onImageLoad: (url, comicId, epId) => {
-            // 确保图片URL是完整的
-            const fullUrl = url.startsWith('http') ? url : `https://${url}`
+            // Venera框架要求直接返回配置对象，url会作为key使用
+            // 这里只需要返回headers，URL由框架管理
             return {
-                url: fullUrl,  // 返回完整URL
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                     'Referer': `${this.baseUrl}/chapter/${epId}`,
