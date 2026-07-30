@@ -1,8 +1,8 @@
 /** @type {import('./_venera_.js')} */
 class ManWaBa extends ComicSource {
     name = "漫蛙吧"
-    key = "manwaba_api_v4"
-    version = "1.0.45"
+    key = "manwaba_base64"
+    version = "1.0.47"
     minAppVersion = "1.4.0"
     url = "https://cdn.jsdelivr.net/gh/amenoshigure/venera-sources@main/manwaba.js"
 
@@ -28,18 +28,45 @@ class ManWaBa extends ComicSource {
         return json;
     }
 
-    // ✅ 修复：替换CDN域名
-    fixImageUrl = (url) => {
-        if (!url) return ""
-        // mhttu.cc -> mwzu.cc (阅读页实际使用的CDN)
-        if (url.includes('mhttu.cc')) {
-            url = url.replace('mhttu.cc', 'mwzu.cc')
+    // ✅ 下载图片并转为Base64
+    async downloadImageAsBase64(url) {
+        try {
+            // 使用 Network.get 获取图片二进制数据
+            const response = await Network.get(url, {
+                headers: {
+                    "User-Agent": this.UA,
+                    "Referer": this.baseUrl,
+                    "Accept": "image/*,*/*;q=0.8",
+                },
+                responseType: "bytes"
+            });
+            
+            if (response.status !== 200) {
+                throw `下载失败: ${response.status}`;
+            }
+            
+            // 将二进制数据转为Base64
+            const base64 = Convert.encodeBase64(response.body);
+            // 检测图片类型
+            let mimeType = "image/jpeg";
+            // 简单检测：检查前几个字节
+            const bytes = response.body;
+            if (bytes.length > 0) {
+                if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) {
+                    mimeType = "image/png";
+                } else if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) {
+                    mimeType = "image/gif";
+                } else if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) {
+                    mimeType = "image/webp";
+                }
+                // 默认保持 image/jpeg
+            }
+            
+            return `data:${mimeType};base64,${base64}`;
+        } catch (e) {
+            console.log(`图片下载失败: ${url}`, e);
+            return null;
         }
-        // 确保HTTPS
-        if (url.startsWith('http://')) {
-            url = url.replace('http://', 'https://')
-        }
-        return url
     }
 
     // ============================================
@@ -63,7 +90,7 @@ class ManWaBa extends ComicSource {
             const parseComic = (comic) => ({
                 id: `mw_${comic.id}`,
                 title: comic.title || "",
-                cover: this.fixImageUrl(comic.pic || ""),
+                cover: comic.pic || "",
                 subTitle: comic.author || "",
                 tags: comic.tags ? comic.tags.split(",") : [],
                 description: comic.intro || ""
@@ -139,7 +166,7 @@ class ManWaBa extends ComicSource {
             const parseComic = (comic) => ({
                 id: `mw_${comic.url?.split("/").pop() || comic.id}`,
                 title: comic.title || "",
-                cover: this.fixImageUrl(comic.pic || ""),
+                cover: comic.pic || "",
                 subTitle: comic.author || "",
                 tags: comic.tags ? comic.tags.split(",") : [],
                 description: comic.intro || "",
@@ -171,7 +198,7 @@ class ManWaBa extends ComicSource {
             const comics = (data.list || []).map(item => ({
                 id: `mw_${item.id}`,
                 title: item.title || "",
-                cover: this.fixImageUrl(item.cover || ""),
+                cover: item.cover || "",
                 subTitle: item.author || "",
                 tags: item.tags ? item.tags.split(",") : [],
                 description: item.description || "",
@@ -211,7 +238,7 @@ class ManWaBa extends ComicSource {
             return new ComicDetails({
                 title: data.title?.toString() || realId,
                 subTitle: data.author?.toString() || "未知",
-                cover: this.fixImageUrl(data.cover || ""),
+                cover: data.cover || "",
                 tags: {
                     "类型": data.tags ? data.tags.split(",") : [],
                     "状态": data.status == 0 ? "连载中" : "已完结"
@@ -222,9 +249,13 @@ class ManWaBa extends ComicSource {
             });
         },
 
+        // ============================================
+        // ✅ 核心：下载图片转为Base64
+        // ============================================
         loadEp: async (comicId, epId) => {
             const imgApi = `${this.api}/comic/image/${epId}`;
             
+            // 获取图片URL列表
             const result = await this.fetchJson(imgApi, {
                 params: {
                     page: 1,
@@ -233,28 +264,50 @@ class ManWaBa extends ComicSource {
                 }
             });
 
-            // ✅ 关键修复：替换CDN域名
-            const images = (result?.data?.images || [])
-                .map(item => this.fixImageUrl(item.url))
+            const imageUrls = (result?.data?.images || [])
+                .map(item => item.url)
                 .filter(url => url && url.length > 0);
 
-            if (images.length === 0) {
+            if (imageUrls.length === 0) {
                 throw "本章未找到任何图片";
             }
 
-            return { images };
+            // ✅ 逐个下载图片并转为Base64
+            const base64Images = [];
+            for (const url of imageUrls) {
+                // 修复URL：mhttu.cc -> mwzu.cc
+                let fixedUrl = url;
+                if (fixedUrl.includes('mhttu.cc')) {
+                    fixedUrl = fixedUrl.replace('mhttu.cc', 'mwzu.cc');
+                }
+                if (fixedUrl.startsWith('http://')) {
+                    fixedUrl = fixedUrl.replace('http://', 'https://');
+                }
+                
+                const base64 = await this.downloadImageAsBase64(fixedUrl);
+                if (base64) {
+                    base64Images.push(base64);
+                }
+            }
+
+            if (base64Images.length === 0) {
+                throw "无法下载任何图片";
+            }
+
+            return { images: base64Images };
         },
 
         onImageLoad: (url, comicId, epId) => {
-            // ✅ 确保URL被修复
-            const fixedUrl = this.fixImageUrl(url)
+            // 如果已经是Base64，直接返回
+            if (url.startsWith('data:image/')) {
+                return { url: url };
+            }
             return {
-                url: fixedUrl,
+                url: url,
                 headers: {
                     "Referer": this.baseUrl,
                     "User-Agent": this.UA,
-                    "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
-                    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                    "Accept": "image/*,*/*;q=0.8",
                 }
             }
         }
