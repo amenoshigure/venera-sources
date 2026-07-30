@@ -7,7 +7,7 @@ class Happy extends ComicSource {
     baseUrl = "https://m.happymh.com"
 
     // ============================================
-    // 请求头
+    // 请求头 - 仅用于HTML请求
     // ============================================
     getHeaders(referer = this.baseUrl) {
         return {
@@ -91,11 +91,10 @@ class Happy extends ComicSource {
             const comics = items.map(this.parseHtmlComic).filter(c => c.id && c.title)
             doc.dispose()
             
-            // 简单分页：如果返回的漫画数量为0，说明没有下一页
             const maxPage = comics.length > 0 ? page + 1 : page
             return {
                 comics: comics,
-                maxPage: comics.length > 0 ? page + 1 : page
+                maxPage: maxPage
             }
         }
     }
@@ -117,7 +116,6 @@ class Happy extends ComicSource {
             const authorElems = doc.querySelectorAll(".mg-sub-title a")
             const authors = authorElems.map(a => a.text.trim()).join(", ")
 
-            // 获取章节列表
             const items = doc.querySelectorAll(".css-137zl9h-chapterButton")
             const chapters = {}
             for (const item of items) {
