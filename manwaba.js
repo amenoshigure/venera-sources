@@ -4,32 +4,13 @@ const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 
 class ManWaBa extends ComicSource {
     name = "漫蛙吧"
-    key = "manwaba_final_v3"
-    version = "1.0.33"
+    key = "manwaba_final"
+    version = "1.0.36"
     minAppVersion = "1.6.0"
     url = "https://cdn.jsdelivr.net/gh/amenoshigure/venera-sources@main/manwaba.js"
 
     baseUrl = "https://manwa.me"
-    imageBaseUrl = "https://mwtuyi.cc"  // 首页使用的CDN
-
-    // ============================================
-    // Settings
-    // ============================================
-    settings = {
-        fix_webp: {
-            title: "WebP转JPG",
-            type: "select",
-            options: [
-                { value: "true", text: "开启" },
-                { value: "false", text: "关闭" },
-            ],
-            default: "true",
-        },
-    }
-
-    get fixWebp() {
-        return this.loadSetting("fix_webp") === "true";
-    }
+    imageBaseUrl = "https://tu.mwzu.cc"
 
     // ============================================
     // Headers
@@ -42,10 +23,6 @@ class ManWaBa extends ComicSource {
             "Accept-Encoding": "gzip, deflate, br",
             "Connection": "keep-alive",
             "Upgrade-Insecure-Requests": "1",
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "none",
-            "Sec-Fetch-User": "?1",
             "Referer": this.baseUrl,
         }
     }
@@ -61,18 +38,9 @@ class ManWaBa extends ComicSource {
         if (url.startsWith('https://')) return url
         if (url.startsWith('http://')) return url.replace('http://', 'https://')
         if (url.startsWith('//')) return `https:${url}`
-        // 如果是相对路径，使用 imageBaseUrl 拼接
         const base = this.imageBaseUrl.endsWith('/') ? this.imageBaseUrl.slice(0, -1) : this.imageBaseUrl
         const path = url.startsWith('/') ? url : `/${url}`
         return `${base}${path}`
-    }
-
-    fixImageUrl = (url) => {
-        let fixed = this.toAbsoluteUrl(url)
-        if (this.fixWebp && fixed.includes('.webp')) {
-            fixed = fixed.replace(/\.webp(\?.*)?$/, '.jpg$1')
-        }
-        return fixed
     }
 
     async requestGet(url, referer = this.baseUrl) {
@@ -92,10 +60,10 @@ class ManWaBa extends ComicSource {
     }
 
     // ============================================
-    // ✅ 解析首页漫画（适配当前HTML结构）
+    // ✅ 解析搜索结果
     // ============================================
-    parseHomeComic = (item) => {
-        const link = item.querySelector("a")
+    parseSearchResult = (item) => {
+        const link = item.querySelector("a[href^='/comic/']")
         if (!link) return null
         
         const href = link.attributes?.href || ""
@@ -104,35 +72,87 @@ class ManWaBa extends ComicSource {
         
         const id = `mw_${baseId}`
         
-        // 封面图：从 .thumb_img.lazy 的 data-src 获取
         const thumb = item.querySelector(".thumb_img.lazy")
-        let cover = thumb?.attributes?.["data-src"] || ""
-        cover = this.fixImageUrl(cover)
+        let cover = thumb?.attributes?.["data-original"] || ""
+        cover = this.toAbsoluteUrl(cover)
         
-        // 如果没有封面，跳过
         if (!cover) return null
         
-        // 标题
-        const title = item.querySelector(".title")?.text?.trim() || baseId
-        
-        // 描述（包含作者和标签）
-        const desc = item.querySelector(".desc")?.text?.trim() || ""
-        
-        // 提取标签
-        const tags = desc.split("|").map(t => t.trim()).filter(t => t)
+        const title = item.querySelector(".body .title")?.text?.trim() || baseId
+        const author = item.querySelector(".body .row:first-child")?.text?.trim() || ""
+        const desc = item.querySelector(".body .text")?.text?.trim() || ""
+        const tagElements = item.querySelectorAll(".body .badge-item")
+        const tags = tagElements.map(el => el.text?.trim()).filter(t => t)
 
         return {
             id: id,
             title: title,
             cover: cover,
-            subTitle: tags.length > 0 ? tags[0] : "",
+            subTitle: author,
             description: desc,
             tags: tags
         }
     }
 
     // ============================================
-    // ✅ Explore - 从首页提取漫画
+    // ✅ 解析首页漫画
+    // ============================================
+    parseHomeComic = (item) => {
+        const link = item.querySelector("a[href^='/comic/']")
+        if (!link) return null
+        
+        const href = link.attributes?.href || ""
+        const baseId = this.safeId(href)
+        if (!baseId) return null
+        
+        const id = `mw_${baseId}`
+        
+        const thumb = item.querySelector(".thumb_img.lazy")
+        let cover = thumb?.attributes?.["data-src"] || ""
+        cover = this.toAbsoluteUrl(cover)
+        
+        if (!cover) return null
+        
+        const title = item.querySelector(".title")?.text?.trim() || baseId
+        const desc = item.querySelector(".desc")?.text?.trim() || ""
+
+        return {
+            id: id,
+            title: title,
+            cover: cover,
+            subTitle: "",
+            description: desc,
+            tags: []
+        }
+    }
+
+    // ============================================
+    // 搜索
+    // ============================================
+    search = {
+        load: async (keyword, options, page) => {
+            const url = `${this.baseUrl}/search?keyword=${encodeURIComponent(keyword)}&page=${page || 1}`
+            const res = await this.requestGet(url, this.baseUrl)
+            if (res.status !== 200) throw `搜索页面请求失败: ${res.status}`
+
+            const doc = new HtmlDocument(res.body)
+            const items = doc.querySelectorAll("#dataList section .item")
+            const comics = []
+
+            for (const item of items) {
+                const comic = this.parseSearchResult(item)
+                if (comic) {
+                    comics.push(comic)
+                }
+            }
+            
+            doc.dispose()
+            return { comics: comics, maxPage: 1 }
+        }
+    }
+
+    // ============================================
+    // Explore
     // ============================================
     explore = [{
         title: "漫蛙吧",
@@ -144,21 +164,18 @@ class ManWaBa extends ComicSource {
             const doc = new HtmlDocument(res.body)
             const result = {}
             
-            // 查找所有漫画区域
             const sections = doc.querySelectorAll(".bm-box")
             
             for (const section of sections) {
-                // 获取分区标题
                 const titleEl = section.querySelector(".tl-head .title")
                 const title = titleEl?.text?.trim() || "推荐"
                 
-                // 获取该区域的漫画列表
                 const items = section.querySelectorAll(".books-row .item")
                 const comics = []
                 
                 for (const item of items) {
                     const comic = this.parseHomeComic(item)
-                    if (comic && comic.cover) {
+                    if (comic) {
                         comics.push(comic)
                     }
                 }
@@ -168,80 +185,10 @@ class ManWaBa extends ComicSource {
                 }
             }
             
-            // 如果上面的方法没找到，直接查找所有 .item
-            if (Object.keys(result).length === 0) {
-                const allComics = []
-                const items = doc.querySelectorAll(".books-row .item")
-                
-                for (const item of items) {
-                    const comic = this.parseHomeComic(item)
-                    if (comic && comic.cover) {
-                        allComics.push(comic)
-                    }
-                }
-                
-                // 去重
-                const seen = new Set()
-                const uniqueComics = allComics.filter(c => {
-                    if (seen.has(c.id)) return false
-                    seen.add(c.id)
-                    return true
-                })
-                
-                if (uniqueComics.length > 0) {
-                    result["推荐"] = uniqueComics.slice(0, 20)
-                }
-            }
-            
             doc.dispose()
             return result
         }
     }]
-
-    // ============================================
-    // 搜索
-    // ============================================
-    search = {
-        load: async (keyword, options, page) => {
-            const url = `${this.baseUrl}/search?keyword=${encodeURIComponent(keyword)}&page=${page || 1}`
-            const res = await this.requestGet(url, `${this.baseUrl}/search`)
-            if (res.status !== 200) throw `搜索页面请求失败: ${res.status}`
-
-            const doc = new HtmlDocument(res.body)
-            const items = doc.querySelectorAll("ul.book-list li, .books-row .item")
-            const comics = []
-
-            for (const item of items) {
-                const link = item.querySelector("a[href^='/comic/']")
-                if (!link) continue
-                
-                const href = link.attributes?.href || ""
-                const baseId = this.safeId(href)
-                if (!baseId) continue
-                
-                const id = `mw_${baseId}`
-                const title = item.querySelector(".title")?.text?.trim() || baseId
-                const thumb = item.querySelector(".thumb_img.lazy")
-                let cover = thumb?.attributes?.["data-src"] || ""
-                cover = this.fixImageUrl(cover)
-                const desc = item.querySelector(".desc")?.text?.trim() || ""
-                
-                if (cover) {
-                    comics.push({
-                        id: id,
-                        title: title,
-                        cover: cover,
-                        subTitle: "",
-                        description: desc,
-                        tags: []
-                    })
-                }
-            }
-            
-            doc.dispose()
-            return { comics: comics, maxPage: 1 }
-        }
-    }
 
     // ============================================
     // 分类页
@@ -262,10 +209,9 @@ class ManWaBa extends ComicSource {
     // ============================================
     categoryComics = {
         load: async (category, param, options, page) => {
-            // 使用分类搜索
             let url = `${this.baseUrl}/search?keyword=${encodeURIComponent(category)}&page=${page || 1}`
             if (category === "全部" || !category) {
-                url = `${this.baseUrl}/booklist?page=${page || 1}`
+                url = `${this.baseUrl}/?page=${page || 1}`
             }
             
             try {
@@ -273,33 +219,13 @@ class ManWaBa extends ComicSource {
                 if (res.status !== 200) throw `分类页面请求失败: ${res.status}`
 
                 const doc = new HtmlDocument(res.body)
-                const items = doc.querySelectorAll(".books-row .item, ul.book-list li")
+                const items = doc.querySelectorAll("#dataList section .item, .books-row .item")
                 const comics = []
 
                 for (const item of items) {
-                    const link = item.querySelector("a[href^='/comic/']") || item.querySelector("a[href^='/book/']")
-                    if (!link) continue
-                    
-                    const href = link.attributes?.href || ""
-                    const baseId = this.safeId(href)
-                    if (!baseId) continue
-                    
-                    const id = `mw_${baseId}`
-                    const title = item.querySelector(".title")?.text?.trim() || baseId
-                    const thumb = item.querySelector(".thumb_img.lazy")
-                    let cover = thumb?.attributes?.["data-src"] || ""
-                    cover = this.fixImageUrl(cover)
-                    const desc = item.querySelector(".desc")?.text?.trim() || ""
-                    
-                    if (cover) {
-                        comics.push({
-                            id: id,
-                            title: title,
-                            cover: cover,
-                            subTitle: "",
-                            description: desc,
-                            tags: []
-                        })
+                    const comic = this.parseSearchResult(item) || this.parseHomeComic(item)
+                    if (comic) {
+                        comics.push(comic)
                     }
                 }
                 
@@ -312,7 +238,7 @@ class ManWaBa extends ComicSource {
     }
 
     // ============================================
-    // 漫画详情
+    // ✅ 漫画详情（根据详情页HTML）
     // ============================================
     comic = {
         loadInfo: async (id) => {
@@ -324,45 +250,22 @@ class ManWaBa extends ComicSource {
 
             const doc = new HtmlDocument(res.body)
             
-            // 提取标题
-            let title = doc.querySelector(".detail-main-info-title, .book-title, h1")?.text?.trim() || ""
-            if (!title) {
-                const titleRaw = doc.querySelector("title")?.text || ""
-                title = titleRaw.split("-")[0]?.trim() || ""
-            }
-            if (!title) {
-                title = realId
-            }
-            
-            const author = doc.querySelector(".detail-main-info-author")?.text?.replace("作者：", "").trim() || "未知"
-            const status = doc.querySelector(".detail-main-info-status")?.text?.replace("更新状态：", "").trim() || "连载中"
-            const lastChapter = doc.querySelector(".detail-main-info-chapter")?.text?.replace("最新章节：", "").trim() || ""
+            const title = doc.querySelector("#page-title")?.text?.trim() || realId
+            const author = doc.querySelector("#author-container a")?.text?.trim() || "未知"
+            const status = doc.querySelector("#status")?.text?.trim() || "连载中"
+            const lastChapter = doc.querySelector("#newch")?.text?.trim() || ""
 
-            let cover = doc.querySelector(".book-cover-img")?.attributes?.src || 
-                        doc.querySelector(".thumb_img.lazy")?.attributes?.["data-src"] ||
-                        ""
-            cover = this.fixImageUrl(cover)
+            let cover = doc.querySelector(".comic-cover")?.attributes?.src || ""
+            cover = this.toAbsoluteUrl(cover)
 
-            // 章节列表
             const chapters = new Map()
-            const chapterLinks = doc.querySelectorAll(".detail-list-1 a, a[href^='/chapter/'], .chapter-list a")
+            const chapterLinks = doc.querySelectorAll("#chapter-grid-container .chapter-item")
             for (const item of chapterLinks) {
                 const href = item.attributes?.href || ""
                 const cid = href.split("/").pop() || ""
-                const name = item.text?.trim() || ""
-                if (cid && name && !isNaN(cid) && cid.length > 0) {
+                const name = item.querySelector(".chapter-name")?.text?.trim() || ""
+                if (cid && name && cid.length > 0) {
                     chapters.set(cid, name)
-                }
-            }
-
-            if (chapters.size === 0) {
-                const chapterLink = doc.querySelector(".detail-main-info-chapter a")
-                if (chapterLink) {
-                    const href = chapterLink.attributes?.href || ""
-                    const cid = href.split("/").pop() || ""
-                    if (cid && !isNaN(cid) && cid.length > 0) {
-                        chapters.set(cid, lastChapter || "第1话")
-                    }
                 }
             }
 
@@ -387,27 +290,28 @@ class ManWaBa extends ComicSource {
         },
 
         // ============================================
-        // 加载章节图片
+        // ✅ 加载章节图片（根据阅读页HTML）
         // ============================================
         loadEp: async (comicId, epId) => {
             if (!comicId || !epId) {
                 throw "漫画ID或章节ID不能为空"
             }
             const realComicId = comicId.replace(/^mw_/, '')
-            const url = `${this.baseUrl}/chapter/${epId}`
+            
+            // 阅读页URL格式：/comic/{comicId}/{epId}
+            const url = `${this.baseUrl}/comic/${realComicId}/${epId}`
             const res = await this.requestGet(url, `${this.baseUrl}/comic/${realComicId}`)
             if (res.status !== 200) throw `阅读页请求失败: ${res.status}`
 
             const doc = new HtmlDocument(res.body)
             const images = []
             
-            const imgElements = doc.querySelectorAll("img.content-img, img.lazy_img, .img-content img")
+            // 从 figure.cImg img.lazy-image 的 data-src 提取
+            const imgElements = doc.querySelectorAll("#showimgcontent figure.cImg img.lazy-image")
             for (const img of imgElements) {
-                let src = img.attributes?.["data-r-src"] || 
-                          img.attributes?.["data-original"] || 
-                          img.attributes?.src || ""
+                let src = img.attributes?.["data-src"] || img.attributes?.src || ""
                 
-                src = this.fixImageUrl(src)
+                src = this.toAbsoluteUrl(src)
                 
                 if (src && 
                     typeof src === 'string' && 
@@ -421,7 +325,8 @@ class ManWaBa extends ComicSource {
                     !src.includes("blank") &&
                     !src.includes("imagecover3") &&
                     !src.includes("mwmissing") &&
-                    !src.includes("blob:")) {
+                    !src.includes("blob:") &&
+                    !src.includes("data:image")) {
                     images.push(src)
                 }
             }
@@ -435,11 +340,11 @@ class ManWaBa extends ComicSource {
         },
 
         onImageLoad: (url, comicId, epId) => {
-            let fullUrl = this.fixImageUrl(url)
+            let fullUrl = this.toAbsoluteUrl(url)
             return {
                 url: fullUrl,
                 headers: {
-                    "Referer": `${this.baseUrl}/chapter/${epId}`,
+                    "Referer": `${this.baseUrl}/comic/${comicId.replace(/^mw_/, '')}/${epId}`,
                     "User-Agent": UA,
                     "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
                     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
@@ -448,7 +353,7 @@ class ManWaBa extends ComicSource {
         },
 
         onThumbnailLoad: (url) => {
-            let fullUrl = this.fixImageUrl(url)
+            let fullUrl = this.toAbsoluteUrl(url)
             return {
                 url: fullUrl,
                 headers: {
@@ -458,6 +363,6 @@ class ManWaBa extends ComicSource {
                     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
                 },
             }
-        },
+        }
     }
 }
