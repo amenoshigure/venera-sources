@@ -2,7 +2,7 @@
 class ManWaBa extends ComicSource {
     name = "漫蛙吧"
     key = "manwaba"
-    version = "1.0.15"
+    version = "1.0.16"
     minAppVersion = "1.6.0"
     url = "https://cdn.jsdelivr.net/gh/amenoshigure/venera-sources@main/manwaba.js"
 
@@ -19,26 +19,31 @@ class ManWaBa extends ComicSource {
         }
     }
 
-    // 确保URL是完整的HTTP/HTTPS URL
-    ensureFullUrl = (url) => {
+    // 修复URL为完整绝对路径
+    fixUrl = (url) => {
         if (!url) return ""
         if (typeof url !== 'string') return ""
         url = url.trim()
+        if (!url) return ""
+        
+        // 已经是完整URL
         if (url.startsWith('http://') || url.startsWith('https://')) {
             return url
         }
-        // 如果是 // 开头，添加 https:
+        
+        // // 开头，补协议
         if (url.startsWith('//')) {
             return `https:${url}`
         }
-        // 相对路径，使用 imageBaseUrl 拼接
-        const baseUrl = this.imageBaseUrl.endsWith('/') ? this.imageBaseUrl.slice(0, -1) : this.imageBaseUrl
+        
+        // 相对路径，用 imageBaseUrl 拼接
+        const base = this.imageBaseUrl.endsWith('/') ? this.imageBaseUrl.slice(0, -1) : this.imageBaseUrl
         const path = url.startsWith('/') ? url : `/${url}`
-        return `${baseUrl}${path}`
+        return `${base}${path}`
     }
 
     async requestGet(url, referer = this.baseUrl) {
-        const fullUrl = this.ensureFullUrl(url)
+        const fullUrl = this.fixUrl(url)
         return await Network.get(fullUrl, {
             headers: this.getHeaders(referer),
             timeout: 30000
@@ -66,7 +71,7 @@ class ManWaBa extends ComicSource {
         const title = this.safeString(item.querySelector(".book-list-info-title")?.text)
         const img = item.querySelector(".book-list-cover-img")
         let cover = img?.attributes?.["data-original"] || img?.attributes?.src || ""
-        cover = this.ensureFullUrl(cover)  // ✅ 确保封面URL完整
+        cover = this.fixUrl(cover)
         
         const authorElem = item.querySelector(".book-list-info-bottom-item")
         const author = authorElem?.text?.replace("作者：", "").trim() || ""
@@ -77,7 +82,7 @@ class ManWaBa extends ComicSource {
         return {
             id: id,
             title: title,
-            cover: cover,  // ✅ 已经是完整URL
+            cover: cover,
             subTitle: author,
             description: desc || status,
             tags: [status]
@@ -170,13 +175,13 @@ class ManWaBa extends ComicSource {
                     const title = item.querySelector(".book-title, .comic-title, .name")?.text?.trim() || ""
                     const img = item.querySelector("img")
                     let cover = img?.attributes?.["data-original"] || img?.attributes?.src || ""
-                    cover = this.ensureFullUrl(cover)  // ✅ 确保封面URL完整
+                    cover = this.fixUrl(cover)
                     
                     if (id && title) {
                         comics.push({
                             id: id,
                             title: title,
-                            cover: cover,  // ✅ 已经是完整URL
+                            cover: cover,
                             subTitle: "",
                             description: "",
                             tags: []
@@ -231,7 +236,7 @@ class ManWaBa extends ComicSource {
             let cover = doc.querySelector(".book-cover-img")?.attributes?.src || 
                         doc.querySelector("img[alt*='记忆万物']")?.attributes?.src || 
                         ""
-            cover = this.ensureFullUrl(cover)  // ✅ 确保封面URL完整
+            cover = this.fixUrl(cover)
 
             const chapters = {}
             
@@ -264,7 +269,7 @@ class ManWaBa extends ComicSource {
 
             return new ComicDetails({
                 title: title,
-                cover: cover,  // ✅ 已经是完整URL
+                cover: cover,
                 description: `状态：${status}，最新章节：${lastChapter}`,
                 subTitle: author,
                 tags: {
@@ -297,11 +302,12 @@ class ManWaBa extends ComicSource {
                           img.attributes?.["data-original"] || 
                           img.attributes?.src || ""
                 
-                src = this.ensureFullUrl(src)  // ✅ 确保图片URL完整
+                src = this.fixUrl(src)
                 
                 if (src && 
                     typeof src === 'string' && 
                     src.length > 0 &&
+                    src.startsWith("http") &&
                     !src.includes("logo") && 
                     !src.includes("icon") && 
                     !src.includes("avatar") && 
@@ -310,8 +316,7 @@ class ManWaBa extends ComicSource {
                     !src.includes("blank") &&
                     !src.includes("imagecover3") &&
                     !src.includes("mwmissing") &&
-                    !src.startsWith("blob:") &&
-                    src.startsWith("http")) {
+                    !src.includes("blob:")) {
                     images.push(src)
                 }
             }
@@ -325,16 +330,12 @@ class ManWaBa extends ComicSource {
         },
 
         // ============================================
-        // 图片加载配置
+        // 图片加载配置 - 只返回headers，不返回url
         // ============================================
         onImageLoad: (url, comicId, epId) => {
-            // 如果URL不是完整的，补全它
-            let fullUrl = url
-            if (!url.startsWith('http://') && !url.startsWith('https://')) {
-                fullUrl = this.ensureFullUrl(url)
-            }
+            // 注意：这里不返回url，只返回headers
+            // 框架会使用loadEp返回的url列表
             return {
-                url: fullUrl,  // ✅ 返回完整URL
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                     'Referer': `${this.baseUrl}/chapter/${epId}`,
