@@ -1,5 +1,7 @@
 class Happy extends ComicSource {
+    // ============================================
     // 漫画源基本信息
+    // ============================================
     name = "嗨皮漫画"
     key = "happy"
     version = "1.0.1"
@@ -9,8 +11,9 @@ class Happy extends ComicSource {
     // 基础URL
     baseUrl = "https://m.happymh.com"
 
-    // ========== 统一的请求头 ==========
-    // 模拟真实浏览器，避免403
+    // ============================================
+    // 请求头 - 模拟真实浏览器，防止403
+    // ============================================
     getHeaders(referer = this.baseUrl) {
         return {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -27,7 +30,6 @@ class Happy extends ComicSource {
         }
     }
 
-    // API请求头（JSON格式）
     getApiHeaders(referer = this.baseUrl) {
         return {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -42,8 +44,9 @@ class Happy extends ComicSource {
         }
     }
 
-    // ========== 封装的请求方法 ==========
-    // 普通页面请求
+    // ============================================
+    // 封装的请求方法
+    // ============================================
     async requestGet(url, referer = this.baseUrl) {
         return await Network.get(url, {
             headers: this.getHeaders(referer),
@@ -51,7 +54,6 @@ class Happy extends ComicSource {
         })
     }
 
-    // API请求
     async requestApi(url, referer = this.baseUrl) {
         return await Network.get(url, {
             headers: this.getApiHeaders(referer),
@@ -59,7 +61,6 @@ class Happy extends ComicSource {
         })
     }
 
-    // POST请求
     async requestPost(url, referer = this.baseUrl, body = '') {
         return await Network.post(url, {
             headers: {
@@ -70,8 +71,9 @@ class Happy extends ComicSource {
         }, body)
     }
 
-    // ========== 原有代码保持不变 ==========
-    // 分类参数映射
+    // ============================================
+    // 分类参数映射（共129个分类）
+    // ============================================
     categoryParamMap = {
         "全部": "",
         "热血": "rexue",
@@ -215,7 +217,9 @@ class Happy extends ComicSource {
         "诡异": "guiyi"
     }
 
-    // 头像ID映射
+    // ============================================
+    // 头像映射
+    // ============================================
     avatarMap = {
         "0": `${this.baseUrl}/next/bookcase/dist/28c0c017f0c3c6d665ee6b9a71ebc461.png`,
         "1": `${this.baseUrl}/next/bookcase/dist/ebd700fe1b9ee6ac7793786b7e6b2910.png`,
@@ -236,14 +240,15 @@ class Happy extends ComicSource {
         "16": `${this.baseUrl}/next/bookcase/dist/cea88102f3bc609f9910851ff15a5105.png`
     }
 
-    // 格式化作者信息
+    // ============================================
+    // 工具函数
+    // ============================================
     formatAuthor = (authorRaw) => {
         const authorStr = authorRaw?.replace(/[+/?·]/g, ",").replace(/,（/g, "(").replace(/：|:,/g, ":").replace(/（/g, "(").replace(/）/g, ")")
         const authors = authorStr?.split(",").map(a => a.trim()).filter(a => a)
         return authors
     }
 
-    // 格式化更新时间
     formatUpdateTime = (timeRaw) => {
         if (/^\d{2}-\d{2}$/.test(timeRaw)) {
             return `${new Date().getFullYear()}-${timeRaw}`
@@ -251,7 +256,9 @@ class Happy extends ComicSource {
         return timeRaw
     }
 
-    // 从HTML元素解析漫画信息
+    // ============================================
+    // HTML解析
+    // ============================================
     parseHtmlComic = (item) => {
         const id = item.querySelector("a").attributes.href.split("/").pop()
         const title = item.querySelector(".manga-title")?.text.trim()
@@ -274,10 +281,8 @@ class Happy extends ComicSource {
         }
     }
 
-    // 从JSON数据解析漫画信息
     parseJsonComic = (item) => {
         const author = this.formatAuthor(item.author)?.join(" | ")
-
         return {
             id: item.manga_code,
             title: item.name,
@@ -288,14 +293,11 @@ class Happy extends ComicSource {
         }
     }
 
-    // 解析评论数据
     parseComment = (item) => {
         let content = item.content
-
         if (item.reply_to_comment && item.reply_to_comment.user) {
             content = `回复 <b><a>@${item.reply_to_comment.user.username}</a></b>：${content}`
         }
-
         return {
             userName: item.user.username,
             avatar: this.avatarMap[item.user.cover],
@@ -306,16 +308,14 @@ class Happy extends ComicSource {
         }
     }
 
-    // 通用评论加载功能
+    // ============================================
+    // 评论加载
+    // ============================================
     loadCommentsCommon = async (comicId, epId, page, replyTo, from) => {
         if (replyTo) {
             const api = `${this.baseUrl}/v2.0/apis/comment/subComments?root_id=${replyTo}&pn=${page}&ps=10`
             const res = await this.requestApi(api)
-
-            if (res.status !== 200) {
-                throw `评论接口请求失败: ${res.status}`
-            }
-
+            if (res.status !== 200) throw `评论接口请求失败: ${res.status}`
             const data = JSON.parse(res.body)
             return {
                 comments: data.data.items.map(this.parseComment),
@@ -326,11 +326,7 @@ class Happy extends ComicSource {
             const ch_id = epId ? `&ch_id=${epId}` : ""
             const api = `${this.baseUrl}/v2.0/apis/comment?code=${comicId}${ch_id}&pn=${page}&order=${order}&from=${from}`
             const res = await this.requestApi(api)
-
-            if (res.status !== 200) {
-                throw `评论接口请求失败: ${res.status}`
-            }
-
+            if (res.status !== 200) throw `评论接口请求失败: ${res.status}`
             const data = JSON.parse(res.body)
             return {
                 comments: data.data.items.map(this.parseComment),
@@ -339,22 +335,19 @@ class Happy extends ComicSource {
         }
     }
 
-    // 带缓存的章节列表加载功能
+    // ============================================
+    // 章节缓存
+    // ============================================
     loadChaptersWithCache = async (comicId) => {
         const fetchData = async (page) => {
             const api = `${this.baseUrl}/v2.0/apis/manga/chapterByPage?code=${comicId}&page=${page}&lang=cn&order=asc`
             const res = await this.requestApi(api)
-
-            if (res.status !== 200) {
-                throw `第${page}页章节接口请求失败: ${res.status}`
-            }
-
+            if (res.status !== 200) throw `第${page}页章节接口请求失败: ${res.status}`
             return JSON.parse(res.body).data
         }
 
         const firstData = await fetchData(1)
         const total = firstData.total
-
         const cacheKey = `chapters_${comicId}`
         const cacheData = this.loadData(cacheKey)
 
@@ -381,10 +374,7 @@ class Happy extends ComicSource {
         const addPage = totalPage - cachePage
         if (addPage > 0) {
             const pages = Array.from({ length: addPage }, (_, i) => cachePage + i + 1)
-            const addData = await Promise.all(
-                pages.map(page => fetchData(page))
-            )
-
+            const addData = await Promise.all(pages.map(page => fetchData(page)))
             for (const data of addData) {
                 for (const item of data.items) {
                     chapters[item.id] = item.chapterName
@@ -401,22 +391,18 @@ class Happy extends ComicSource {
         return chapters
     }
 
-    // 保存缓存数据
     saveCache = (key, data) => {
         this.saveData(key, data)
         const keys = this.loadData("cache_keys") || []
-
         if (!keys.includes(key)) {
             keys.push(key)
             this.saveData("cache_keys", keys)
         }
     }
 
-    // 清理过期缓存
     cleanCache = (cacheTTL) => {
         const allKeys = this.loadData("cache_keys") || []
         const validKeys = []
-
         for (const key of allKeys) {
             if (Date.now() - this.loadData(key).time < cacheTTL) {
                 validKeys.push(key)
@@ -424,45 +410,40 @@ class Happy extends ComicSource {
                 this.deleteData(key)
             }
         }
-
         this.saveData("cache_keys", validKeys)
     }
 
-    // 初始化
     init() {
         this.cleanCache(this.loadSetting("cacheTTL"))
     }
 
-    // ========== 发现页 ==========
+    // ============================================
+    // 发现页（首页）
+    // ============================================
     explore = [{
         title: "嗨皮漫画",
         type: "singlePageWithMultiPart",
         load: async () => {
             const res = await this.requestGet(this.baseUrl)
-
-            if (res.status !== 200) {
-                throw `主页请求失败: ${res.status}`
-            }
-
+            if (res.status !== 200) throw `主页请求失败: ${res.status}`
             const doc = new HtmlDocument(res.body)
             const parts = doc.querySelectorAll(".manga-area")
             const result = {}
-
             for (const part of parts) {
                 const title = part.querySelector("h3").text.trim()
                 const comics = part.querySelectorAll(".manga-cover").map(this.parseHtmlComic)
-
                 if (comics.length > 0) {
                     result[title] = comics
                 }
             }
-
             doc.dispose()
             return result
         }
     }]
 
-    // ========== 分类页 ==========
+    // ============================================
+    // 分类页
+    // ============================================
     category = {
         title: "嗨皮漫画",
         parts: [{
@@ -475,24 +456,20 @@ class Happy extends ComicSource {
         enableRankingPage: true
     }
 
-    // ========== 分类漫画加载 ==========
+    // ============================================
+    // 分类漫画加载
+    // ============================================
     categoryComics = {
         load: async (category, param, options, page) => {
             const api = `${this.baseUrl}/apis/c/index?genre=${param}&area=${options[0]}&audience=${options[1]}&series_status=${options[2]}&pn=${page}`
-            const referer = `${this.baseUrl}/latest`
-            const res = await this.requestApi(api, referer)
-
-            if (res.status !== 200) {
-                throw `分类接口请求失败: ${res.status}`
-            }
-
+            const res = await this.requestApi(api, `${this.baseUrl}/latest`)
+            if (res.status !== 200) throw `分类接口请求失败: ${res.status}`
             const data = JSON.parse(res.body)
             return {
                 comics: data.data.items.map(this.parseJsonComic),
                 maxPage: data.data.isEnd ? page : null
             }
         },
-
         optionList: [{
             label: "地区",
             options: [
@@ -522,7 +499,6 @@ class Happy extends ComicSource {
                 "1-完结"
             ]
         }],
-
         ranking: {
             options: [
                 "day-日阅读",
@@ -534,19 +510,13 @@ class Happy extends ComicSource {
                 "voteRank-总评分",
                 "voteNumMonthRank-月投票"
             ],
-
             load: async (option, page) => {
                 const url = `${this.baseUrl}/rank/${option}`
                 const res = await this.requestGet(url)
-
-                if (res.status !== 200) {
-                    throw `排行榜页面请求失败: ${res.status}`
-                }
-
+                if (res.status !== 200) throw `排行榜页面请求失败: ${res.status}`
                 const doc = new HtmlDocument(res.body)
                 const comics = doc.querySelectorAll(".manga-rank").map(this.parseHtmlComic)
                 doc.dispose()
-
                 return {
                     comics: comics,
                     maxPage: 1
@@ -555,18 +525,15 @@ class Happy extends ComicSource {
         }
     }
 
-    // ========== 搜索 ==========
+    // ============================================
+    // 搜索
+    // ============================================
     search = {
         load: async (keyword, options, page) => {
             const api = `${this.baseUrl}/v2.0/apis/manga/ssearch`
-            const referer = `${this.baseUrl}/sssearch`
             const body = `searchkey=${encodeURIComponent(keyword)}&v=v2.13`
-            const res = await this.requestPost(api, referer, body)
-
-            if (res.status !== 200) {
-                throw `搜索接口请求失败: ${res.status}`
-            }
-
+            const res = await this.requestPost(api, `${this.baseUrl}/sssearch`, body)
+            if (res.status !== 200) throw `搜索接口请求失败: ${res.status}`
             const data = JSON.parse(res.body)
             return {
                 comics: data.data.items.map(this.parseJsonComic),
@@ -575,15 +542,14 @@ class Happy extends ComicSource {
         }
     }
 
-    // ========== 漫画详情 ==========
+    // ============================================
+    // 漫画详情
+    // ============================================
     comic = {
         loadInfo: async (id) => {
             const url = `${this.baseUrl}/manga/${id}`
             const res = await this.requestGet(url, url)
-
-            if (res.status !== 200) {
-                throw `漫画详情页请求失败: ${res.status}`
-            }
+            if (res.status !== 200) throw `漫画详情页请求失败: ${res.status}`
 
             const doc = new HtmlDocument(res.body)
 
@@ -628,18 +594,13 @@ class Happy extends ComicSource {
             })
         },
 
-        // ========== 加载章节图片（关键：图片Referer） ==========
         loadEp: async (comicId, epId) => {
             const api = `${this.baseUrl}/v2.0/apis/manga/reading?code=${comicId}&cid=${epId}&v=v3.1919111`
             const referer = `${this.baseUrl}/manga/${comicId}`
             const res = await this.requestApi(api, referer)
-
-            if (res.status !== 200) {
-                throw `章节图片接口请求失败: ${res.status}`
-            }
+            if (res.status !== 200) throw `章节图片接口请求失败: ${res.status}`
 
             const data = JSON.parse(res.body)
-
             const original = this.loadSetting("originalImage")
             const images = data.data.scans.filter(item => item.n === 0).map(item => original ? item.url.replace(/\?.*$/, "") : item.url)
 
@@ -652,7 +613,9 @@ class Happy extends ComicSource {
             }
         },
 
-        // ========== 图片加载配置（关键：防止图片403） ==========
+        // ============================================
+        // 图片加载配置 - 关键：防止图片403
+        // ============================================
         onImageLoad: (url, comicId, epId) => {
             return {
                 headers: {
@@ -697,14 +660,15 @@ class Happy extends ComicSource {
         enableTagsTranslate: false
     }
 
-    // ========== 设置 ==========
+    // ============================================
+    // 设置
+    // ============================================
     settings = {
         originalImage: {
             title: "阅读显示原图",
             type: "switch",
             default: false
         },
-
         commentOrder: {
             title: "评论排序方式",
             type: "select",
@@ -714,7 +678,6 @@ class Happy extends ComicSource {
             ],
             default: "hot"
         },
-
         cacheTTL: {
             title: "缓存有效时长",
             type: "select",
@@ -728,7 +691,6 @@ class Happy extends ComicSource {
             ],
             default: 2592000000
         },
-
         wipeCache: {
             title: "清除全部缓存",
             type: "callback",
