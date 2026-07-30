@@ -2,11 +2,16 @@
 class ManWaBa extends ComicSource {
     name = "漫蛙吧"
     key = "manwaba_api"
-    version = "1.0.38"
+    version = "1.0.39"
     minAppVersion = "1.4.0"
     url = "https://cdn.jsdelivr.net/gh/amenoshigure/venera-sources@main/manwaba.js"
 
     api = "https://mwuu.cc/api"
+
+    // ✅ 在类内部定义 UA
+    get UA() {
+        return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
 
     // ============================================
     // 工具方法
@@ -27,7 +32,7 @@ class ManWaBa extends ComicSource {
     }
 
     // ============================================
-    // Explore - 使用API
+    // Explore
     // ============================================
     explore = [{
         title: "漫蛙吧",
@@ -38,7 +43,7 @@ class ManWaBa extends ComicSource {
                 .then(res => res.data);
 
             const lists = {
-                "热门": data.comicList || [],
+                "推荐": data.comicList || [],
                 "最新完整版": data.gufengList || [],
                 "最新更新": data.xuanhuanList || [],
                 "热门收藏": data.xiaoyuanList || []
@@ -78,7 +83,7 @@ class ManWaBa extends ComicSource {
     }
 
     // ============================================
-    // 分类漫画 - 使用API
+    // 分类漫画
     // ============================================
     categoryComics = {
         load: async (category, param, options, page) => {
@@ -143,7 +148,7 @@ class ManWaBa extends ComicSource {
     }
 
     // ============================================
-    // 搜索 - 使用API
+    // 搜索
     // ============================================
     search = {
         load: async (keyword, options, page) => {
@@ -170,7 +175,7 @@ class ManWaBa extends ComicSource {
     }
 
     // ============================================
-    // 漫画详情 - 使用API
+    // 漫画详情
     // ============================================
     comic = {
         loadInfo: async (id) => {
@@ -235,11 +240,12 @@ class ManWaBa extends ComicSource {
         },
 
         onImageLoad: (url, comicId, epId) => {
+            // ✅ 使用 this.UA 而不是外部 UA 变量
             return {
                 url: url,
                 headers: {
                     "Referer": "https://manwa.me",
-                    "User-Agent": UA,
+                    "User-Agent": this.UA,
                     "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
                     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
                 }
