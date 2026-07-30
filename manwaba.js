@@ -155,84 +155,82 @@ class ManWaBa extends ComicSource {
     // ============================================
     // 漫画详情
     // ============================================
-    comic = {
-        loadInfo: async (id) => {
-            if (!id) throw "漫画ID不能为空"
-            
-            const url = `${this.baseUrl}/book/${id}`
-            const res = await this.requestGet(url, url)
-            if (res.status !== 200) throw `详情页请求失败: ${res.status}`
+comic = {
+    loadInfo: async (id) => {
+        if (!id) throw "漫画ID不能为空"
+        
+        const url = `${this.baseUrl}/book/${id}`
+        const res = await this.requestGet(url, url)
+        if (res.status !== 200) throw `详情页请求失败: ${res.status}`
 
-            const doc = new HtmlDocument(res.body)
-            
-            // 提取标题
-            const title = doc.querySelector(".book-list-info-title")?.text?.trim() || 
-                          doc.querySelector(".page-title")?.text?.trim() || 
-                          id
-            // 提取封面
-            const cover = doc.querySelector(".book-list-cover-img")?.attributes?.["data-original"] || 
-                          doc.querySelector(".book-cover-img")?.attributes?.src || 
-                          ""
-            // 提取简介
-            const description = doc.querySelector(".book-list-info-desc")?.text?.trim() || ""
-            // 提取作者
-            const authorElem = doc.querySelector(".book-list-info-bottom-item")
-            const author = authorElem?.text?.replace("作者：", "").trim() || ""
+        const doc = new HtmlDocument(res.body)
+        
+        const title = doc.querySelector(".book-list-info-title")?.text?.trim() || 
+                      doc.querySelector(".page-title")?.text?.trim() || 
+                      id
+        const cover = doc.querySelector(".book-list-cover-img")?.attributes?.["data-original"] || 
+                      doc.querySelector(".book-cover-img")?.attributes?.src || 
+                      ""
+        const description = doc.querySelector(".book-list-info-desc")?.text?.trim() || ""
+        const authorElem = doc.querySelector(".book-list-info-bottom-item")
+        const author = authorElem?.text?.replace("作者：", "").trim() || ""
 
-            // 提取章节列表
-            const chapters = {}
-            const chapterItems = doc.querySelectorAll(".chapter-list li, .chapters a, .list a")
-            for (const item of chapterItems) {
-                const href = item.attributes?.href || ""
-                const cid = this.safeId(href)
-                const name = item.text?.trim() || ""
-                if (cid && name) {
-                    chapters[cid] = name
-                }
+        const chapters = {}
+        const chapterItems = doc.querySelectorAll(".chapter-list li, .chapters a, .list a")
+        for (const item of chapterItems) {
+            const href = item.attributes?.href || ""
+            const cid = this.safeId(href)
+            const name = item.text?.trim() || ""
+            if (cid && name) {
+                chapters[cid] = name
             }
+        }
 
-            doc.dispose()
+        doc.dispose()
 
-            return new ComicDetails({
-                title: title,
-                cover: cover,
-                description: description,
-                subTitle: author,
-                chapters: chapters,
-                url: url
-            })
-        },
-
-        loadEp: async (comicId, epId) => {
-            if (!comicId || !epId) throw "参数不能为空"
-            
-            const url = `${this.baseUrl}/read/${comicId}/${epId}`
-            const res = await this.requestGet(url, `${this.baseUrl}/book/${comicId}`)
-            if (res.status !== 200) throw `阅读页请求失败: ${res.status}`
-
-            const doc = new HtmlDocument(res.body)
-            const images = []
-            for (const img of doc.querySelectorAll("img")) {
-                const src = img.attributes?.src || ""
-                if (src && !src.includes("logo") && !src.includes("icon") && !src.includes("avatar") && !src.includes("favicon")) {
-                    images.push(src)
-                }
+        return new ComicDetails({
+            title: title,
+            cover: cover,
+            description: description,
+            subTitle: author,
+            chapters: chapters,
+            url: url,
+            tags: {
+                "作者": author ? [author] : [],
+                "状态": []
             }
-            doc.dispose()
+        })
+    },
 
-            if (images.length === 0) {
-                throw "本章未找到任何图片"
+    loadEp: async (comicId, epId) => {
+        if (!comicId || !epId) throw "参数不能为空"
+        
+        const url = `${this.baseUrl}/read/${comicId}/${epId}`
+        const res = await this.requestGet(url, `${this.baseUrl}/book/${comicId}`)
+        if (res.status !== 200) throw `阅读页请求失败: ${res.status}`
+
+        const doc = new HtmlDocument(res.body)
+        const images = []
+        for (const img of doc.querySelectorAll("img")) {
+            const src = img.attributes?.src || ""
+            if (src && !src.includes("logo") && !src.includes("icon") && !src.includes("avatar") && !src.includes("favicon")) {
+                images.push(src)
             }
-            return { images: images }
-        },
+        }
+        doc.dispose()
 
-        onImageLoad: (url, comicId, epId) => {
-            return {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                    'Referer': `${this.baseUrl}/read/${comicId}/${epId}`,
-                    'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8'
-                }
+        if (images.length === 0) {
+            throw "本章未找到任何图片"
+        }
+        return { images: images }
+    },
+
+    onImageLoad: (url, comicId, epId) => {
+        return {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Referer': `${this.baseUrl}/read/${comicId}/${epId}`,
+                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8'
             }
         }
     }
