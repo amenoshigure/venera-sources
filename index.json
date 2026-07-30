@@ -1,5 +1,7 @@
-{
-  "name": "嗨皮漫画",
-  "url": "https://raw.githubusercontent.com/amenoshigure/venera-sources/main/happy.js",
-  "version": "1.0.0"
-}
+[
+  {
+    "name": "嗨皮漫画",
+    "url": "https://raw.githubusercontent.com/amenoshigure/venera-sources/main/happy.js",
+    "version": "1.0.0"
+  }
+]
