@@ -4,8 +4,8 @@ const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 
 class ManWaBa extends ComicSource {
     name = "漫蛙吧"
-    key = "manwaba_final"
-    version = "1.0.36"
+    key = "manwaba_final_v5"
+    version = "1.0.37"
     minAppVersion = "1.6.0"
     url = "https://cdn.jsdelivr.net/gh/amenoshigure/venera-sources@main/manwaba.js"
 
@@ -60,9 +60,10 @@ class ManWaBa extends ComicSource {
     }
 
     // ============================================
-    // ✅ 解析搜索结果
+    // ✅ 解析搜索结果（修正选择器）
     // ============================================
     parseSearchResult = (item) => {
+        // 查找 a[href^='/comic/']
         const link = item.querySelector("a[href^='/comic/']")
         if (!link) return null
         
@@ -72,15 +73,24 @@ class ManWaBa extends ComicSource {
         
         const id = `mw_${baseId}`
         
+        // 查找 .thumb_img.lazy 的 data-original
         const thumb = item.querySelector(".thumb_img.lazy")
         let cover = thumb?.attributes?.["data-original"] || ""
         cover = this.toAbsoluteUrl(cover)
         
+        // 如果没有封面，跳过
         if (!cover) return null
         
+        // 标题：.body .title
         const title = item.querySelector(".body .title")?.text?.trim() || baseId
+        
+        // 作者：.body .row 第一个
         const author = item.querySelector(".body .row:first-child")?.text?.trim() || ""
+        
+        // 描述：.body .text
         const desc = item.querySelector(".body .text")?.text?.trim() || ""
+        
+        // 标签：.badge-item
         const tagElements = item.querySelectorAll(".body .badge-item")
         const tags = tagElements.map(el => el.text?.trim()).filter(t => t)
 
@@ -127,7 +137,7 @@ class ManWaBa extends ComicSource {
     }
 
     // ============================================
-    // 搜索
+    // 搜索 - 修正选择器
     // ============================================
     search = {
         load: async (keyword, options, page) => {
@@ -136,7 +146,8 @@ class ManWaBa extends ComicSource {
             if (res.status !== 200) throw `搜索页面请求失败: ${res.status}`
 
             const doc = new HtmlDocument(res.body)
-            const items = doc.querySelectorAll("#dataList section .item")
+            // ✅ 修正：使用 .books-rows .item
+            const items = doc.querySelectorAll(".books-rows .item")
             const comics = []
 
             for (const item of items) {
@@ -219,7 +230,7 @@ class ManWaBa extends ComicSource {
                 if (res.status !== 200) throw `分类页面请求失败: ${res.status}`
 
                 const doc = new HtmlDocument(res.body)
-                const items = doc.querySelectorAll("#dataList section .item, .books-row .item")
+                const items = doc.querySelectorAll(".books-rows .item, .books-row .item")
                 const comics = []
 
                 for (const item of items) {
@@ -238,7 +249,7 @@ class ManWaBa extends ComicSource {
     }
 
     // ============================================
-    // ✅ 漫画详情（根据详情页HTML）
+    // 漫画详情
     // ============================================
     comic = {
         loadInfo: async (id) => {
@@ -290,7 +301,7 @@ class ManWaBa extends ComicSource {
         },
 
         // ============================================
-        // ✅ 加载章节图片（根据阅读页HTML）
+        // 加载章节图片
         // ============================================
         loadEp: async (comicId, epId) => {
             if (!comicId || !epId) {
@@ -298,7 +309,6 @@ class ManWaBa extends ComicSource {
             }
             const realComicId = comicId.replace(/^mw_/, '')
             
-            // 阅读页URL格式：/comic/{comicId}/{epId}
             const url = `${this.baseUrl}/comic/${realComicId}/${epId}`
             const res = await this.requestGet(url, `${this.baseUrl}/comic/${realComicId}`)
             if (res.status !== 200) throw `阅读页请求失败: ${res.status}`
@@ -306,7 +316,6 @@ class ManWaBa extends ComicSource {
             const doc = new HtmlDocument(res.body)
             const images = []
             
-            // 从 figure.cImg img.lazy-image 的 data-src 提取
             const imgElements = doc.querySelectorAll("#showimgcontent figure.cImg img.lazy-image")
             for (const img of imgElements) {
                 let src = img.attributes?.["data-src"] || img.attributes?.src || ""
