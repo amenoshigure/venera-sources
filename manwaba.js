@@ -2,7 +2,7 @@
 class ManWaBa extends ComicSource {
     name = "漫蛙吧"
     key = "manwaba"
-    version = "1.0.10"
+    version = "1.0.11"
     minAppVersion = "1.6.0"
     url = "https://cdn.jsdelivr.net/gh/amenoshigure/venera-sources@main/manwaba.js"
 
@@ -19,7 +19,9 @@ class ManWaBa extends ComicSource {
     }
 
     async requestGet(url, referer = this.baseUrl) {
-        return await Network.get(url, {
+        // 确保URL是完整的
+        const fullUrl = url.startsWith('http') ? url : `${this.baseUrl}${url.startsWith('/') ? '' : '/'}${url}`
+        return await Network.get(fullUrl, {
             headers: this.getHeaders(referer),
             timeout: 30000
         })
@@ -106,7 +108,7 @@ class ManWaBa extends ComicSource {
     }]
 
     // ============================================
-    // 分类页
+    // 分类页 - 修正
     // ============================================
     category = {
         title: "分类浏览",
@@ -120,11 +122,66 @@ class ManWaBa extends ComicSource {
     }
 
     // ============================================
-    // 分类漫画加载
+    // 分类漫画加载 - 修正
     // ============================================
     categoryComics = {
         load: async (category, param, options, page) => {
-            return { comics: [], maxPage: 1 }
+            // 构建分类搜索URL
+            let url = `${this.baseUrl}/booklist`
+            if (category && category !== "全部" && category !== "") {
+                url = `${this.baseUrl}/booklist?category=${encodeURIComponent(category)}`
+            }
+            if (page && page > 1) {
+                url += (url.includes('?') ? '&' : '?') + `page=${page}`
+            }
+            
+            try {
+                const res = await this.requestGet(url, this.baseUrl)
+                if (res.status !== 200) throw `分类页面请求失败: ${res.status}`
+
+                const doc = new HtmlDocument(res.body)
+                const items = doc.querySelectorAll("ul.book-list li, .book-item, .comic-item")
+                const comics = []
+
+                for (const item of items) {
+                    const link = item.querySelector("a[href^='/book/']")
+                    const href = link?.attributes?.href || ""
+                    const id = href.split("/").pop() || ""
+                    
+                    const title = item.querySelector(".book-title, .comic-title, .name")?.text?.trim() || ""
+                    const img = item.querySelector("img")
+                    const cover = img?.attributes?.["data-original"] || img?.attributes?.src || ""
+                    
+                    if (id && title) {
+                        comics.push({
+                            id: id,
+                            title: title,
+                            cover: cover,
+                            subTitle: "",
+                            description: "",
+                            tags: []
+                        })
+                    }
+                }
+                
+                doc.dispose()
+                
+                // 尝试获取最大页数
+                let maxPage = 1
+                const pageLinks = doc.querySelectorAll(".pagination a, .page-list a")
+                for (const link of pageLinks) {
+                    const text = link.text?.trim() || ""
+                    const num = parseInt(text)
+                    if (!isNaN(num) && num > maxPage) {
+                        maxPage = num
+                    }
+                }
+                
+                return { comics: comics, maxPage: maxPage }
+            } catch (e) {
+                // 如果分类页面加载失败，返回空结果
+                return { comics: [], maxPage: 1 }
+            }
         }
     }
 
@@ -162,9 +219,7 @@ class ManWaBa extends ComicSource {
                           doc.querySelector("img[alt*='记忆万物']")?.attributes?.src || 
                           ""
 
-            // ============================================
-            // 提取章节列表，获取真实的章节ID
-            // ============================================
+            // 提取章节列表
             const chapters = {}
             
             // 从章节列表提取链接（格式：/chapter/数字ID）
@@ -213,14 +268,14 @@ class ManWaBa extends ComicSource {
         },
 
         // ============================================
-        // 加载章节图片（修复版）
+        // 加载章节图片
         // ============================================
         loadEp: async (comicId, epId) => {
             if (!comicId || !epId) {
                 throw "漫画ID或章节ID不能为空"
             }
             
-            // ✅ 修复：使用 /chapter/{epId} 格式
+            // 使用 /chapter/{epId} 格式
             const url = `${this.baseUrl}/chapter/${epId}`
             const res = await this.requestGet(url, `${this.baseUrl}/book/${comicId}`)
             if (res.status !== 200) throw `阅读页请求失败: ${res.status}`
@@ -228,8 +283,7 @@ class ManWaBa extends ComicSource {
             const doc = new HtmlDocument(res.body)
             const images = []
             
-            // ✅ 从 data-r-src 属性提取真实图片地址
-            // 图片使用懒加载，真实地址在 data-r-src 中
+            // 从 data-r-src 属性提取真实图片地址
             const imgElements = doc.querySelectorAll("img.content-img, img.lazy_img, .img-content img")
             for (const img of imgElements) {
                 // 优先使用 data-r-src，其次是 data-original，最后是 src
@@ -247,9 +301,9 @@ class ManWaBa extends ComicSource {
                     !src.includes("favicon") &&
                     !src.includes("loading") &&
                     !src.includes("blank") &&
-                    !src.includes("imagecover3") && // 排除占位图
+                    !src.includes("imagecover3") &&
                     !src.includes("mwmissing") &&
-                    !src.startsWith("blob:")) { // 排除 blob 占位
+                    !src.startsWith("blob:")) {
                     images.push(src)
                 }
             }
