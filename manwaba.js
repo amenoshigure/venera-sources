@@ -1,29 +1,16 @@
 /** @type {import('./_venera_.js')} */
 class ManWaBa extends ComicSource {
     name = "漫蛙吧"
-    key = "manwaba_final_v6"
-    version = "1.0.46"
+    key = "manwaba_fixed"
+    version = "1.0.48"
     minAppVersion = "1.4.0"
     url = "https://cdn.jsdelivr.net/gh/amenoshigure/venera-sources@main/manwaba.js"
 
     api = "https://mwuu.cc/api"
     baseUrl = "https://manwa.me"
 
-    // ✅ 尝试不同的CDN域名
-    cdnDomains = [
-        "https://mwtuyi.cc",
-        "https://mwtusan.cc",
-        "https://mwtusi.cc",
-        "https://svip.mwtt.cc"
-    ]
-    currentCdnIndex = 0
-
     get UA() {
         return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
-
-    get currentCdn() {
-        return this.cdnDomains[this.currentCdnIndex] || this.cdnDomains[0]
     }
 
     async fetchJson(url, { method = "GET", params, headers, payload } = {}) {
@@ -41,26 +28,38 @@ class ManWaBa extends ComicSource {
         return json;
     }
 
-    // ✅ 替换图片域名
+    // ✅ 核心修复：替换图片CDN域名
     fixImageUrl = (url) => {
         if (!url) return ""
+        if (typeof url !== 'string') return ""
+        url = url.trim()
+        if (!url) return ""
+        
         // 确保HTTPS
         if (url.startsWith('http://')) {
             url = url.replace('http://', 'https://')
         }
-        // 替换CDN域名
-        if (url.includes('mhttu.cc') || url.includes('mwzu.cc') || url.includes('tu.')) {
-            // 提取路径部分
-            const pathMatch = url.match(/https?:\/\/[^\/]+(\/.*)/)
-            if (pathMatch) {
-                return this.currentCdn + pathMatch[1]
+        
+        // ✅ 关键：将所有图片域名替换为 mwtuyi.cc
+        // mwtuyi.cc 没有被 Cloudflare 处理，图片可以正常解码
+        const cdnDomains = ['tu.mhttu.cc', 'tu.mwzu.cc', 'tu.', 'mhttu.cc', 'mwzu.cc']
+        for (const domain of cdnDomains) {
+            if (url.includes(domain)) {
+                // 提取路径部分
+                const pathMatch = url.match(/https?:\/\/[^\/]+(\/.*)/)
+                if (pathMatch) {
+                    return `https://mwtuyi.cc${pathMatch[1]}`
+                }
+                // 如果匹配失败，尝试简单替换
+                return url.replace(domain, 'mwtuyi.cc')
             }
         }
+        
         return url
     }
 
     // ============================================
-    // Explore - 使用API
+    // Explore
     // ============================================
     explore = [{
         title: "漫蛙吧",
@@ -239,6 +238,9 @@ class ManWaBa extends ComicSource {
             });
         },
 
+        // ============================================
+        // ✅ 加载章节图片 - 使用域名替换
+        // ============================================
         loadEp: async (comicId, epId) => {
             const imgApi = `${this.api}/comic/image/${epId}`;
             
@@ -246,34 +248,31 @@ class ManWaBa extends ComicSource {
                 params: {
                     page: 1,
                     page_size: 200,
-                    imageSource: this.currentCdn
+                    imageSource: "https://mwtuyi.cc"
                 }
             });
 
-            // 提取并修复图片URL
+            // ✅ 修复所有图片URL
             const images = (result?.data?.images || [])
                 .map(item => this.fixImageUrl(item.url))
                 .filter(url => url && url.length > 0);
 
             if (images.length === 0) {
-                // 如果当前CDN失败，尝试下一个
-                if (this.currentCdnIndex < this.cdnDomains.length - 1) {
-                    this.currentCdnIndex++
-                    return this.loadEp(comicId, epId)
-                }
-                throw "本章未找到任何图片"
+                throw "本章未找到任何图片";
             }
 
             return { images };
         },
 
         onImageLoad: (url, comicId, epId) => {
+            // ✅ 确保URL被修复
+            const fixedUrl = this.fixImageUrl(url)
             return {
-                url: url,
+                url: fixedUrl,
                 headers: {
                     "Referer": this.baseUrl,
                     "User-Agent": this.UA,
-                    "Accept": "image/*,*/*;q=0.8",
+                    "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
                     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
                 }
             }
